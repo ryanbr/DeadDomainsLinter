@@ -3,5 +3,6 @@
 ||example.org^$domain=example.notexisting
 ||example.org^$domain=~example.notexisting
 example.notexisting##banner
+||anotherdeaddomain.examplee^
 
 ! Проверяем, что с кодировкой все останется в порядке после перезаписи.

@@ -1,4 +1,4 @@
-const urlfilter = require('../src/urlfilter');
+const urlfilter = require('../../src/urlfilter');
 
 describe('urlfilter', () => {
     it('check a domain that we know does exist', async () => {

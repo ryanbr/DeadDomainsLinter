@@ -1,4 +1,4 @@
-const dnscheck = require('../src/dnscheck');
+const dnscheck = require('../../src/dnscheck');
 
 describe('dnscheck', () => {
     it('check a known existing domain', async () => {

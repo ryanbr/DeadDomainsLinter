@@ -1,5 +1,5 @@
 const agtree = require('@adguard/agtree');
-const checker = require('../src/linter');
+const checker = require('../../src/linter');
 
 const testLintRule = (rule, expected, useDNS = false, ignoreDomains = new Set()) => {
     return async () => {
