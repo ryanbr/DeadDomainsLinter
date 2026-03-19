@@ -451,7 +451,7 @@ async function lintRule(ast, options) {
         return null;
     }
 
-    const suggestedRule = modifyRule(ast, deadDomains);
+    const suggestedRule = options.domainsOnly ? undefined : modifyRule(ast, deadDomains);
 
     return {
         suggestedRule,

@@ -161,6 +161,7 @@ async function main() {
                 useDNS: argv.dnscheck,
                 commentOut: argv.commentout,
                 concurrent: argv.concurrent,
+                domainsOnly: !!argv.export,
                 deadDomains: predefinedDomains,
                 ignoreDomains,
             };
