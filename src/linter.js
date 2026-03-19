@@ -6,7 +6,7 @@ const utils = require('./utils');
 /**
  * A list of network rule modifiers that are to be scanned for dead domains.
  */
-const DOMAIN_MODIFIERS = ['domain', 'denyallow', 'from', 'to'];
+const DOMAIN_MODIFIERS = new Set(['domain', 'denyallow', 'from', 'to']);
 
 /**
  * Regular expression that matches the domain in a network rule pattern.
@@ -107,7 +107,7 @@ function extractNetworkRuleDomains(ast) {
     for (let i = 0; i < ast.modifiers.children.length; i += 1) {
         const modifier = ast.modifiers.children[i];
 
-        if (DOMAIN_MODIFIERS.includes(modifier.modifier.value)) {
+        if (DOMAIN_MODIFIERS.has(modifier.modifier.value)) {
             const modifierDomains = extractModifierDomains(modifier)
                 .map((domain) => domain.domain);
 
@@ -183,7 +183,7 @@ function modifyCosmeticRule(ast, deadDomains) {
     for (let i = newAst.domains.children.length - 1; i >= 0; i -= 1) {
         const domain = newAst.domains.children[i];
 
-        if (deadDomains.includes(domain.value)) {
+        if (deadDomains.has(domain.value)) {
             newAst.domains.children.splice(i, 1);
         }
     }
@@ -229,7 +229,7 @@ function modifyCosmeticRule(ast, deadDomains) {
  */
 function modifyNetworkRule(ast, deadDomains) {
     const patternDomain = extractDomainFromPattern(ast);
-    if (deadDomains.includes(patternDomain)) {
+    if (deadDomains.has(patternDomain)) {
         // Suggest completely removing the rule if it contains a dead domain in
         // the pattern.
         return null;
@@ -251,7 +251,7 @@ function modifyNetworkRule(ast, deadDomains) {
     for (let i = 0; i < newAst.modifiers.children.length; i += 1) {
         const modifier = newAst.modifiers.children[i];
 
-        if (DOMAIN_MODIFIERS.includes(modifier.modifier.value)) {
+        if (DOMAIN_MODIFIERS.has(modifier.modifier.value)) {
             const modifierDomains = extractModifierDomains(modifier);
 
             // Check if modifierDomains had at least one non-negated domain.
@@ -259,7 +259,7 @@ function modifyNetworkRule(ast, deadDomains) {
 
             // Remove the dead domains from the modifier.
             const filteredDomains = modifierDomains.filter(
-                (domain) => !deadDomains.includes(domain.domain),
+                (domain) => !deadDomains.has(domain.domain),
             );
 
             // Check if filteredDomains now has at least one non-negated domain.
@@ -321,11 +321,12 @@ function modifyNetworkRule(ast, deadDomains) {
  * @throws {Error} Throws an error if the rule AST if for unexpected category.
  */
 function modifyRule(ast, deadDomains) {
+    const deadDomainsSet = new Set(deadDomains);
     switch (ast.category) {
         case 'Network':
-            return modifyNetworkRule(ast, deadDomains);
+            return modifyNetworkRule(ast, deadDomainsSet);
         case 'Cosmetic':
-            return modifyCosmeticRule(ast, deadDomains);
+            return modifyCosmeticRule(ast, deadDomainsSet);
         default:
             throw new Error(`Unsupported rule category: ${ast.category}`);
     }
@@ -333,7 +334,7 @@ function modifyRule(ast, deadDomains) {
 
 // Cache for the results of the domains check. The key is the domain name, the
 // value is true for alive domains, false for dead.
-const domainsCheckCache = {};
+const domainsCheckCache = new Map();
 
 /**
  * Goes through the list of domains that needs to be checked and uses the
@@ -350,8 +351,9 @@ async function findDeadDomains(domains, options) {
     // If we have a pre-defined list of domains, skip all other checks and just
     // go through it.
     if (options.deadDomains && options.deadDomains.length > 0) {
+        const deadDomainsSet = new Set(options.deadDomains);
         domains.forEach((domain) => {
-            if (options.deadDomains.includes(domain) && !options.ignoreDomains.has(domain)) {
+            if (deadDomainsSet.has(domain) && !options.ignoreDomains.has(domain)) {
                 deadDomains.push(domain);
             }
         });
@@ -362,8 +364,8 @@ async function findDeadDomains(domains, options) {
     const nonIgnoredDomains = domains.filter((domain) => !options.ignoreDomains.has(domain));
     // eslint-disable-next-line no-restricted-syntax
     for (const domain of utils.unique(nonIgnoredDomains)) {
-        if (Object.prototype.hasOwnProperty.call(domainsCheckCache, domain)) {
-            if (domainsCheckCache[domain] === false) {
+        if (domainsCheckCache.has(domain)) {
+            if (domainsCheckCache.get(domain) === false) {
                 deadDomains.push(domain);
             }
         } else {
@@ -395,9 +397,9 @@ async function findDeadDomains(domains, options) {
     // eslint-disable-next-line no-restricted-syntax
     for (const domain of domainsToCheck) {
         if (deadDomains.includes(domain)) {
-            domainsCheckCache[domain] = false;
+            domainsCheckCache.set(domain, false);
         } else {
-            domainsCheckCache[domain] = true;
+            domainsCheckCache.set(domain, true);
         }
     }
 
