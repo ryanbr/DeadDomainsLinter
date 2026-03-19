@@ -145,6 +145,7 @@ Options:
       --import      Import dead domains from the specified file and skip other
                     checks.                                             [string]
       --ignore      File with domains to ignore.                        [string]
+  -c, --concurrent  Number of concurrent processes.      [number] [default: 10]
   -a, --auto        Automatically apply suggested fixes without asking the user.
                                                       [boolean] [default: false]
   -s, --show        Show suggestions without applying them.

@@ -6,12 +6,7 @@ const consolaUtils = require('consola/utils');
 const agtree = require('@adguard/agtree');
 const linter = require('./linter');
 
-// Filter list lines are processing in parallel in chunks of this size. For
-// now we chose 10 as the test run shows it to provide good enough results
-// without overloading the web service.
-//
-// TODO(ameshkov): Consider making it configurable.
-const PARALLEL_CHUNK_SIZE = 10;
+const DEFAULT_CONCURRENT = 10;
 
 /**
  * Represents options for the linter.
@@ -26,6 +21,7 @@ const PARALLEL_CHUNK_SIZE = 10;
  * from the urlfilter web service with a DNS query.
  * @property {boolean} commentOut - If true, the linter will suggest commenting
  * a rule out instead of removing it.
+ * @property {number} concurrent - Number of concurrent processes.
  * @property {Array<string>} deadDomains - Pre-defined list of dead domains. If
  * it is specified, skip all other checks.
  * @property {Set<string>} ignoreDomains - Set of domains to ignore.
@@ -89,6 +85,7 @@ async function processRuleAst(file, ast, options) {
 
         const linterResult = await linter.lintRule(ast, {
             useDNS: options.useDNS,
+            concurrent: options.concurrent,
             deadDomains: options.deadDomains,
             ignoreDomains: options.ignoreDomains,
         });
@@ -136,7 +133,7 @@ async function processListAst(file, listAst, options) {
     let running = 0;
 
     function acquire() {
-        if (running < PARALLEL_CHUNK_SIZE) {
+        if (running < (options.concurrent || DEFAULT_CONCURRENT)) {
             running += 1;
             return Promise.resolve();
         }

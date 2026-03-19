@@ -55,6 +55,11 @@ const { argv } = require('yargs')
         type: 'boolean',
         description: 'Show suggestions without applying them.',
     })
+    .option('concurrent', {
+        alias: 'c',
+        type: 'number',
+        description: 'Number of concurrent processes.',
+    })
     .option('verbose', {
         alias: 'v',
         type: 'boolean',
@@ -63,6 +68,7 @@ const { argv } = require('yargs')
     .default('input', '**/*.txt')
     .default('dnscheck', true)
     .default('commentout', false)
+    .default('concurrent', 10)
     .default('auto', false)
     .default('show', false)
     .default('verbose', false)
@@ -154,6 +160,7 @@ async function main() {
                 auto: argv.auto || !!argv.export,
                 useDNS: argv.dnscheck,
                 commentOut: argv.commentout,
+                concurrent: argv.concurrent,
                 deadDomains: predefinedDomains,
                 ignoreDomains,
             };

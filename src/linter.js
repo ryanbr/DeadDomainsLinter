@@ -374,10 +374,9 @@ async function findDeadDomains(domains, options) {
     const checkResult = await urlfilter.findDeadDomains(domainsToCheck);
 
     if (options.useDNS) {
-        // Check DNS in parallel batches of 4 to avoid flooding.
-        const DNS_BATCH_SIZE = 4;
-        for (let i = 0; i < checkResult.length; i += DNS_BATCH_SIZE) {
-            const batch = checkResult.slice(i, i + DNS_BATCH_SIZE);
+        const dnsBatchSize = options.concurrent || 4;
+        for (let i = 0; i < checkResult.length; i += dnsBatchSize) {
+            const batch = checkResult.slice(i, i + dnsBatchSize);
             // eslint-disable-next-line no-await-in-loop
             const results = await Promise.all(
                 batch.map((domain) => dnscheck.checkDomain(domain)
@@ -412,6 +411,7 @@ async function findDeadDomains(domains, options) {
  *
  * @property {boolean} useDNS - If true, use a DNS query to doublecheck domains
  * returned by the urlfilter web service.
+ * @property {number} concurrent - Number of concurrent processes.
  * @property {Array<string>} deadDomains - Pre-defined list of dead domains. If
  * it is specified, skip all other checks.
  * @property {Set<string>} ignoreDomains - Set of domains to ignore.
