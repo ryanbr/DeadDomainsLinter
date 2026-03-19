@@ -131,6 +131,7 @@ async function processRuleAst(file, ast, options) {
 async function processListAst(file, listAst, options) {
     consola.start(`Analyzing ${listAst.children.length} rules`);
 
+    const totalRules = listAst.children.length;
     let analyzedRules = 0;
     let issuesCount = 0;
 
@@ -168,7 +169,7 @@ async function processListAst(file, listAst, options) {
                 analyzedRules += 1;
 
                 if (analyzedRules % 100 === 0) {
-                    consola.info(`Analyzed ${analyzedRules} rules, found ${issuesCount} issues`);
+                    consola.info(`Analyzed ${analyzedRules}/${totalRules} rules, found ${issuesCount} issues`);
                 }
 
                 release();

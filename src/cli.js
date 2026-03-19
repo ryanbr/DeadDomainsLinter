@@ -106,6 +106,12 @@ function getDeadDomains(fileResult) {
 async function main() {
     consola.info(`Starting ${packageJson.name} v${packageJson.version}`);
 
+    // If --export is passed without a filename, generate a default one.
+    if (argv.export === true) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        argv.export = `dead_domains_${timestamp}.txt`;
+    }
+
     const globExpression = argv.input;
     const files = glob.globSync(globExpression);
     const plural = files.length > 1 || files.length === 0;
