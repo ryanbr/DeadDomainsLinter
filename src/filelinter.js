@@ -128,22 +128,32 @@ async function processRuleAst(file, ast, options) {
 async function processListAst(file, listAst, options) {
     consola.start(`Analyzing ${listAst.children.length} rules`);
 
-    let processing = 0;
     let analyzedRules = 0;
     let issuesCount = 0;
 
+    // Promise-based semaphore to limit concurrency without busy-waiting.
+    const waitQueue = [];
+    let running = 0;
+
+    function acquire() {
+        if (running < PARALLEL_CHUNK_SIZE) {
+            running += 1;
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => { waitQueue.push(resolve); });
+    }
+
+    function release() {
+        running -= 1;
+        if (waitQueue.length > 0) {
+            running += 1;
+            waitQueue.shift()();
+        }
+    }
+
     const processingResults = await Promise.all(listAst.children.map((ast) => {
         return (async () => {
-            // Using a simple semaphore-like construction to limit the number of
-            // parallel processing tasks.
-            while (processing >= PARALLEL_CHUNK_SIZE) {
-                // Waiting for 10ms until the next check. 10ms is an arbitrarily
-                // chosen value, there's no big difference between 100-10-1.
-
-                await new Promise((resolve) => { setTimeout(resolve, 10); });
-            }
-
-            processing += 1;
+            await acquire();
             try {
                 const result = await processRuleAst(file, ast, options);
                 if (result !== null) {
@@ -153,11 +163,12 @@ async function processListAst(file, listAst, options) {
                 return result;
             } finally {
                 analyzedRules += 1;
-                processing -= 1;
 
                 if (analyzedRules % 100 === 0) {
                     consola.info(`Analyzed ${analyzedRules} rules, found ${issuesCount} issues`);
                 }
+
+                release();
             }
         })();
     }));

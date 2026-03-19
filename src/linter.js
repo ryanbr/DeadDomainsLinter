@@ -374,14 +374,20 @@ async function findDeadDomains(domains, options) {
     const checkResult = await urlfilter.findDeadDomains(domainsToCheck);
 
     if (options.useDNS) {
-        // eslint-disable-next-line no-restricted-syntax
-        for (const domain of checkResult) {
+        // Check DNS in parallel batches of 4 to avoid flooding.
+        const DNS_BATCH_SIZE = 4;
+        for (let i = 0; i < checkResult.length; i += DNS_BATCH_SIZE) {
+            const batch = checkResult.slice(i, i + DNS_BATCH_SIZE);
             // eslint-disable-next-line no-await-in-loop
-            const dnsRecordExists = await dnscheck.checkDomain(domain);
-
-            if (!dnsRecordExists) {
-                deadDomains.push(domain);
-            }
+            const results = await Promise.all(
+                batch.map((domain) => dnscheck.checkDomain(domain)
+                    .then((exists) => ({ domain, exists }))),
+            );
+            results.forEach(({ domain, exists }) => {
+                if (!exists) {
+                    deadDomains.push(domain);
+                }
+            });
         }
     } else {
         deadDomains.push(...checkResult);
