@@ -49,10 +49,16 @@ async function confirm(message, options) {
     }
 
     const answer = await consola.prompt(message, {
-        type: 'confirm',
+        type: 'select',
+        options: ['Yes', 'No', 'Exit'],
     });
 
-    return answer;
+    if (typeof answer === 'symbol' || answer === 'Exit') {
+        consola.info('Cancelled by user');
+        process.exit(0);
+    }
+
+    return answer === 'Yes';
 }
 
 /**
