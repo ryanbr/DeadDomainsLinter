@@ -1,28 +1,41 @@
 const dns = require('dns');
 const { promisify } = require('util');
 
-const resolver = new dns.Resolver();
-
 // Note, that we don't use AdGuard DNS servers here in order to not add checked
 // domains to the next domains snapshot.
-//
-// TODO(ameshkov): Consider making the DNS server configurable.
-resolver.setServers([
-    '8.8.8.8',
-]);
+const DNS_SERVERS = [
+    '8.8.8.8',        // Google
+    '1.1.1.1',        // Cloudflare
+    '9.9.9.9',        // Quad9
+    '208.67.222.222',  // OpenDNS
+];
 
-const resolveAsync = promisify(resolver.resolve).bind(resolver);
+let currentIndex = 0;
 
 /**
- * Checks if the domain has an A record.
+ * Returns the next DNS server in the rotation.
+ *
+ * @returns {string} The DNS server address.
+ */
+function nextServer() {
+    const server = DNS_SERVERS[currentIndex];
+    currentIndex = (currentIndex + 1) % DNS_SERVERS.length;
+    return server;
+}
+
+/**
+ * Checks if the domain has an A record, cycling through DNS servers.
  *
  * @param {string} domain - Domain name to check with a DNS query.
  * @returns {Promise<boolean>} Returns true if the domain has an A record.
  */
 async function domainExists(domain) {
+    const resolver = new dns.Resolver();
+    resolver.setServers([nextServer()]);
+    const resolveAsync = promisify(resolver.resolve).bind(resolver);
+
     try {
         const addresses = await resolveAsync(domain, 'A');
-
         return addresses.length > 0;
     } catch {
         return false;
@@ -50,7 +63,7 @@ async function checkDomain(domain) {
     // Double-check a www. version of a domain name. We do this because there
     // are some cases when it's necessary:
     // https://github.com/AdguardTeam/DeadDomainsLinter/issues/16
-    exists = domainExists(`www.${domain}`);
+    exists = await domainExists(`www.${domain}`);
 
     return exists;
 }

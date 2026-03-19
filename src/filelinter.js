@@ -254,8 +254,8 @@ async function confirmFileChanges(file, fileResult, options) {
     }, 0);
 
     const summaryMsg = `${consolaUtils.colorize('bold', `Summary for ${file}:`)}\n`
-        + `${cntRemove} line${cntRemove.length > 1 || cntRemove.length === 0 ? 's' : ''} will be removed.\n`
-        + `${cntModify} line${cntModify.length > 1 || cntModify.length === 0 ? 's' : ''} will be modified.`;
+        + `${cntRemove} line${cntRemove !== 1 ? 's' : ''} will be removed.\n`
+        + `${cntModify} line${cntModify !== 1 ? 's' : ''} will be modified.`;
 
     consola.box(summaryMsg);
 

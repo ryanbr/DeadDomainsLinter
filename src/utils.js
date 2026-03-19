@@ -8,7 +8,7 @@ const tldts = require('tldts');
  * @returns {Array<string>} Returns a new array without duplicates.
  */
 function unique(arr) {
-    return [...new Set([].concat(...arr))];
+    return [...new Set(arr)];
 }
 
 // A list of TLD that we ignore and don't check for existence for technical

@@ -128,7 +128,7 @@ async function fetchWithRetry(domains, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
 
     domains.forEach((domain) => {
         const asciiDomain = punycode.toASCII(domain);
-        url.searchParams.append('domain', encodeURIComponent(trimFqdn(asciiDomain)));
+        url.searchParams.append('domain', trimFqdn(asciiDomain));
     });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
