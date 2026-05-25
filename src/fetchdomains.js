@@ -38,7 +38,33 @@ const dnsProcessing = {};
 const dnsCache = {};
 
 /**
- * Custom DNS lookup function that caches resolution result permanently.
+ * Dispatches a lookup result to the node net/tls connector callback in the
+ * shape it expects (no NPE on missing/empty addresses).
+ *
+ * @param {Error|null} err - Lookup error, if any.
+ * @param {Array|undefined} addresses - Resolved addresses from dns.lookup with
+ * {all: true} or undefined if the lookup failed.
+ * @param {string} hostname - Hostname being resolved (for error messages).
+ * @param {object} options - Original lookup options ({all}).
+ * @param {Function} cb - Connector callback.
+ */
+function deliver(err, addresses, hostname, options, cb) {
+    if (err || !addresses || addresses.length === 0) {
+        cb(err || new Error(`No A records for ${hostname}`));
+        return;
+    }
+    if (options.all) {
+        cb(null, addresses);
+        return;
+    }
+    const addr = addresses[0];
+    cb(null, addr.address, addr.family);
+}
+
+/**
+ * Custom DNS lookup function that caches resolution results permanently and
+ * funnels concurrent queries for the same hostname through a single in-flight
+ * dns.lookup call.
  *
  * @param {string} hostname - The hostname to resolve.
  * @param {object} options - The options object.
@@ -48,13 +74,7 @@ const dnsCache = {};
 function dnsLookup(hostname, options, cb) {
     const cached = dnsCache[hostname];
     if (cached) {
-        if (options.all) {
-            cb(null, cached);
-        } else {
-            const addr = cached[0];
-            cb(null, addr.address, addr.family);
-        }
-
+        deliver(null, cached, hostname, options, cb);
         return;
     }
 
@@ -72,19 +92,11 @@ function dnsLookup(hostname, options, cb) {
     dns.lookup(hostname, { all: true, family: 4 }, (err, addresses) => {
         delete dnsProcessing[hostname];
 
-        if (err === null) {
+        if (err === null && addresses && addresses.length > 0) {
             dnsCache[hostname] = addresses;
         }
 
-        if (options.all) {
-            cb(err, addresses);
-        } else {
-            if (addresses.length === 0) {
-                cb(err, addresses);
-            }
-            const addr = addresses[0];
-            cb(err, addr.address, addr.family);
-        }
+        deliver(err, addresses, hostname, options, cb);
     });
 }
 

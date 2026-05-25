@@ -332,9 +332,48 @@ function modifyRule(ast, deadDomains) {
     }
 }
 
-// Cache for the results of the domains check. The key is the domain name, the
-// value is true for alive domains, false for dead.
+// Promise-based cache for domain liveness. The key is the domain name; the
+// value is a Promise<boolean> that resolves to true for alive and false for
+// dead. Storing the promise (rather than the resolved boolean) lets concurrent
+// callers that race on the same domain share a single in-flight check instead
+// of each issuing their own urlfilter request.
 const domainsCheckCache = new Map();
+
+/**
+ * Runs a single urlfilter (+ optional DNS) batch and returns the set of
+ * domains confirmed dead.
+ *
+ * @param {Array<string>} toCheck - Domains to look up.
+ * @param {LintOptions} options - Configuration for the linting process.
+ * @returns {Promise<Set<string>>} Set of confirmed-dead domains.
+ */
+async function runDeadCheckBatch(toCheck, options) {
+    const checkResult = await urlfilter.findDeadDomains(toCheck);
+    const confirmedDead = new Set(checkResult);
+
+    if (!options.useDNS) {
+        return confirmedDead;
+    }
+
+    // DNS double-check the dead ones; any that DNS says still exist are
+    // removed from the dead set.
+    const dnsBatchSize = options.concurrent || 4;
+    for (let i = 0; i < checkResult.length; i += dnsBatchSize) {
+        const batch = checkResult.slice(i, i + dnsBatchSize);
+        // eslint-disable-next-line no-await-in-loop
+        const results = await Promise.all(
+            batch.map((domain) => dnscheck.checkDomain(domain)
+                .then((exists) => ({ domain, exists }))),
+        );
+        results.forEach(({ domain, exists }) => {
+            if (exists) {
+                confirmedDead.delete(domain);
+            }
+        });
+    }
+
+    return confirmedDead;
+}
 
 /**
  * Goes through the list of domains that needs to be checked and uses the
@@ -345,13 +384,11 @@ const domainsCheckCache = new Map();
  * @returns {Promise<Array<string>>} A list of dead domains.
  */
 async function findDeadDomains(domains, options) {
-    const deadDomains = [];
-    const domainsToCheck = [];
-
     // If we have a pre-defined list of domains, skip all other checks and just
     // go through it.
     if (options.deadDomains && options.deadDomains.length > 0) {
         const deadDomainsSet = new Set(options.deadDomains);
+        const deadDomains = [];
         domains.forEach((domain) => {
             if (deadDomainsSet.has(domain) && !options.ignoreDomains.has(domain)) {
                 deadDomains.push(domain);
@@ -361,49 +398,40 @@ async function findDeadDomains(domains, options) {
         return utils.unique(deadDomains);
     }
 
-    const nonIgnoredDomains = domains.filter((domain) => !options.ignoreDomains.has(domain));
-    // eslint-disable-next-line no-restricted-syntax
-    for (const domain of utils.unique(nonIgnoredDomains)) {
-        if (domainsCheckCache.has(domain)) {
-            if (domainsCheckCache.get(domain) === false) {
-                deadDomains.push(domain);
-            }
-        } else {
-            domainsToCheck.push(domain);
-        }
-    }
+    const nonIgnoredDomains = utils.unique(
+        domains.filter((domain) => !options.ignoreDomains.has(domain)),
+    );
 
-    const checkResult = await urlfilter.findDeadDomains(domainsToCheck);
+    // Pick up only the domains that have no cached or in-flight check.
+    const toCheck = nonIgnoredDomains.filter((domain) => !domainsCheckCache.has(domain));
 
-    if (options.useDNS) {
-        const dnsBatchSize = options.concurrent || 4;
-        for (let i = 0; i < checkResult.length; i += dnsBatchSize) {
-            const batch = checkResult.slice(i, i + dnsBatchSize);
-            // eslint-disable-next-line no-await-in-loop
-            const results = await Promise.all(
-                batch.map((domain) => dnscheck.checkDomain(domain)
-                    .then((exists) => ({ domain, exists }))),
-            );
-            results.forEach(({ domain, exists }) => {
-                if (!exists) {
-                    deadDomains.push(domain);
-                }
+    if (toCheck.length > 0) {
+        // Share one underlying batch across every domain in this batch so a
+        // concurrent caller that asks for any of them awaits the same work.
+        const batchPromise = runDeadCheckBatch(toCheck, options);
+
+        toCheck.forEach((domain) => {
+            // The cached promise resolves to alive-ness (true=alive, false=dead).
+            domainsCheckCache.set(domain, batchPromise.then((deadSet) => !deadSet.has(domain)));
+        });
+
+        // On batch failure, evict the in-flight entries so subsequent calls retry
+        // instead of forever replaying the rejection.
+        batchPromise.catch(() => {
+            toCheck.forEach((domain) => {
+                domainsCheckCache.delete(domain);
             });
-        }
-    } else {
-        deadDomains.push(...checkResult);
+        });
     }
 
-    // eslint-disable-next-line no-restricted-syntax
-    for (const domain of domainsToCheck) {
-        if (deadDomains.includes(domain)) {
-            domainsCheckCache.set(domain, false);
-        } else {
-            domainsCheckCache.set(domain, true);
-        }
-    }
+    const liveness = await Promise.all(
+        nonIgnoredDomains.map((domain) => domainsCheckCache.get(domain)
+            .then((isAlive) => ({ domain, isAlive }))),
+    );
 
-    return deadDomains;
+    return liveness
+        .filter(({ isAlive }) => !isAlive)
+        .map(({ domain }) => domain);
 }
 
 /**

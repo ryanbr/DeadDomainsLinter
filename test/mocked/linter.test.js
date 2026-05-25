@@ -165,4 +165,95 @@ describe('Linter mocked tests', () => {
         null,
         new Set(['example.notexistingdomain']),
     ));
+
+    it('dedupes in-flight lookups for the same domain across concurrent lintRule calls', async () => {
+        // Use unique domains so the module-level cache from prior tests doesn't
+        // satisfy the lookup before fetch is called.
+        const shared = `racy.${Date.now()}.example.invalid`;
+
+        // Hold the fetch resolution until both lintRule calls have queued.
+        let releaseFetch;
+        const fetchGate = new Promise((r) => { releaseFetch = r; });
+
+        fetch.mockImplementation(async (url) => {
+            await fetchGate;
+            const requested = new URL(url).searchParams.getAll('domain');
+            const data = {};
+            requested.forEach((d) => {
+                data[d] = {
+                    info: {
+                        domain_name: d,
+                        registered_domain: d,
+                        registered_domain_used_last_24_hours: false,
+                        used_last_24_hours: false,
+                    },
+                    matches: [],
+                };
+            });
+            return {
+                status: 200,
+                ok: true,
+                headers: { get: () => 'application/json' },
+                json: jest.fn().mockResolvedValue(data),
+            };
+        });
+
+        const ast1 = agtree.RuleParser.parse(`||${shared}^`);
+        const ast2 = agtree.RuleParser.parse(`||${shared}^$third-party`);
+
+        const p1 = checker.lintRule(ast1, { useDNS: false, ignoreDomains: new Set() });
+        const p2 = checker.lintRule(ast2, { useDNS: false, ignoreDomains: new Set() });
+
+        releaseFetch();
+        const [r1, r2] = await Promise.all([p1, p2]);
+
+        // Both rules see the dead domain.
+        expect(r1.deadDomains).toEqual([shared]);
+        expect(r2.deadDomains).toEqual([shared]);
+
+        // Pre-fix the same domain would trigger two fetches; with the
+        // promise cache it should be one (or zero if the second call landed
+        // post-resolution, but that's fine too).
+        expect(fetch.mock.calls.length).toBeLessThanOrEqual(1);
+    });
+
+    it('evicts cache entries when the urlfilter batch fails so future calls retry', async () => {
+        const target = `flaky.${Date.now()}.example.invalid`;
+
+        // First call: fetch rejects, so the linter call rejects and the cache
+        // entry is evicted.
+        fetch.mockImplementationOnce(async () => { throw new Error('network down'); });
+
+        const ast = agtree.RuleParser.parse(`||${target}^`);
+        await expect(
+            checker.lintRule(ast, { useDNS: false, ignoreDomains: new Set() }),
+        ).rejects.toThrow();
+
+        // Second call: fetch succeeds. If the cache still held the rejected
+        // promise from the first call, this would also throw.
+        fetch.mockImplementationOnce(async (url) => {
+            const requested = new URL(url).searchParams.getAll('domain');
+            const data = {};
+            requested.forEach((d) => {
+                data[d] = {
+                    info: {
+                        domain_name: d,
+                        registered_domain: d,
+                        registered_domain_used_last_24_hours: false,
+                        used_last_24_hours: false,
+                    },
+                    matches: [],
+                };
+            });
+            return {
+                status: 200,
+                ok: true,
+                headers: { get: () => 'application/json' },
+                json: jest.fn().mockResolvedValue(data),
+            };
+        });
+
+        const result = await checker.lintRule(ast, { useDNS: false, ignoreDomains: new Set() });
+        expect(result.deadDomains).toEqual([target]);
+    });
 });
