@@ -1,6 +1,7 @@
 #! /usr/bin/env node
 
 const fs = require('fs');
+const Diff = require('diff');
 const consola = require('consola');
 // eslint-disable-next-line import/no-unresolved
 const consolaUtils = require('consola/utils');
@@ -24,6 +25,11 @@ const { argv } = require('yargs')
         '$0 -a -i filter.txt -o filter.cleaned.txt',
         'scan filter.txt, apply fixes, and write the result to filter.cleaned.txt instead of overwriting the input',
     )
+    .example(
+        '$0 -i filter.txt --diff=changes.patch',
+        'scan filter.txt and write a unified diff of the proposed removals to changes.patch'
+            + ' without modifying the input',
+    )
     .option('input', {
         alias: 'i',
         type: 'string',
@@ -46,6 +52,12 @@ const { argv } = require('yargs')
     .option('export', {
         type: 'string',
         description: 'Export dead domains to the specified file instead of modifying the files.',
+    })
+    .option('diff', {
+        type: 'string',
+        description: 'Write a unified diff of the proposed removals/modifications to the specified file'
+            + ' (defaults to dead_domains_<timestamp>.patch) without touching the input files.'
+            + ' Incompatible with --output and --export.',
     })
     .option('import', {
         type: 'string',
@@ -122,8 +134,19 @@ async function main() {
         argv.export = `dead_domains_${timestamp}.txt`;
     }
 
+    // Same for --diff: bare flag generates a default .patch filename.
+    if (argv.diff === '') {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        argv.diff = `dead_domains_${timestamp}.patch`;
+    }
+
     if (argv.output !== undefined && argv.export !== undefined) {
         consola.error('--output cannot be combined with --export');
+        process.exit(1);
+    }
+
+    if (argv.diff !== undefined && (argv.export !== undefined || argv.output !== undefined)) {
+        consola.error('--diff cannot be combined with --export or --output');
         process.exit(1);
     }
 
@@ -176,6 +199,8 @@ async function main() {
     const ignoreDomains = new Set(ignoreDomainsList);
     // This array is used when export is enabled.
     const deadDomains = [];
+    // Concatenated unified diff across all files; only written when --diff is set.
+    let diffOutput = '';
 
     for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
@@ -185,7 +210,9 @@ async function main() {
 
             const linterOptions = {
                 show: argv.show,
-                auto: argv.auto || argv.export !== undefined,
+                // --export and --diff are non-interactive previews; auto-confirm
+                // so the linter doesn't try to prompt the user mid-run.
+                auto: argv.auto || argv.export !== undefined || argv.diff !== undefined,
                 useDNS: argv.dnscheck,
                 commentOut: argv.commentout,
                 concurrent: argv.concurrent,
@@ -201,6 +228,10 @@ async function main() {
             if (fileResult !== null) {
                 if (argv.export) {
                     deadDomains.push(...getDeadDomains(fileResult));
+                } else if (argv.diff !== undefined) {
+                    const original = fs.readFileSync(file, 'utf8');
+                    const updated = fileLinter.buildNewContents(fileResult);
+                    diffOutput += Diff.createPatch(file, original, updated);
                 } else {
                     // eslint-disable-next-line no-await-in-loop
                     await fileLinter.applyFileChanges(file, fileResult, linterOptions);
@@ -217,6 +248,11 @@ async function main() {
         consola.info(`Exporting the list of dead domains to ${argv.export}`);
         const uniqueDomains = utils.unique(deadDomains);
         fs.writeFileSync(argv.export, uniqueDomains.join('\n'));
+    }
+
+    if (argv.diff !== undefined) {
+        consola.info(`Writing unified diff to ${argv.diff}`);
+        fs.writeFileSync(argv.diff, diffOutput);
     }
 
     consola.success('Finished successfully');

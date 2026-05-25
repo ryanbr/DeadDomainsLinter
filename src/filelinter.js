@@ -323,24 +323,13 @@ async function confirmFileChanges(file, fileResult, options) {
 }
 
 /**
- * Applies confirmed changes to the file.
+ * Mutates fileResult.listAst by removing/replacing rules per fileResult.results
+ * and returns the serialized filter list. Pure: no prompts, no I/O.
  *
- * @param {string} file - Path to the file.
  * @param {FileResult} fileResult - Result of linting the file.
- * @param {FileLintOptions} options - Configuration for this linter run.
+ * @returns {string} The new filter list contents.
  */
-async function applyFileChanges(file, fileResult, options) {
-    const confirmed = await confirmFileChanges(file, fileResult, options);
-
-    if (!confirmed) {
-        consola.info(`Skipping file ${file}`);
-
-        return;
-    }
-
-    const outputPath = options.output || file;
-    consola.info(`Applying modifications to ${outputPath}`);
-
+function buildNewContents(fileResult) {
     const { listAst, results } = fileResult;
 
     // Sort result by lineNumber descending so that we could use it for the
@@ -362,7 +351,29 @@ async function applyFileChanges(file, fileResult, options) {
 
     // Generate a new filter list contents, use raw text when it's
     // available in a rule AST.
-    const newContents = agtree.FilterListParser.generate(listAst, true);
+    return agtree.FilterListParser.generate(listAst, true);
+}
+
+/**
+ * Applies confirmed changes to the file.
+ *
+ * @param {string} file - Path to the file.
+ * @param {FileResult} fileResult - Result of linting the file.
+ * @param {FileLintOptions} options - Configuration for this linter run.
+ */
+async function applyFileChanges(file, fileResult, options) {
+    const confirmed = await confirmFileChanges(file, fileResult, options);
+
+    if (!confirmed) {
+        consola.info(`Skipping file ${file}`);
+
+        return;
+    }
+
+    const outputPath = options.output || file;
+    consola.info(`Applying modifications to ${outputPath}`);
+
+    const newContents = buildNewContents(fileResult);
 
     // Write the filter list to disk: --output if set, otherwise overwrite the input.
     fs.writeFileSync(outputPath, newContents);
@@ -371,4 +382,5 @@ async function applyFileChanges(file, fileResult, options) {
 module.exports = {
     lintFile,
     applyFileChanges,
+    buildNewContents,
 };

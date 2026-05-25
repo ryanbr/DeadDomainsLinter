@@ -32,6 +32,7 @@
   "dependencies": {
     "@adguard/agtree": "^1.1.8",
     "consola": "3.4.2",
+    "diff": "^5.2.0",
     "glob": "^10.5.0",
     "punycode": "^2.3.1",
     "tldts": "^6.1.86",

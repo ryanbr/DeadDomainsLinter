@@ -192,6 +192,29 @@ describe('File linter with mocked API', () => {
         }
     });
 
+    it('buildNewContents produces a string with dead-domain lines removed/modified', async () => {
+        fetch.mockResolvedValue(createSuccessResponse(
+            ['example.notexisting', 'anotherdeaddomain.examplee'],
+            ['example.org'],
+        ));
+
+        const inputPath = 'test/resources/filter.txt';
+        const original = fs.readFileSync(inputPath, 'utf8');
+        const options = { auto: true, ignoreDomains: new Set() };
+        const fileResult = await fileLinter.lintFile(inputPath, options);
+
+        const updated = fileLinter.buildNewContents(fileResult);
+
+        expect(typeof updated).toBe('string');
+        expect(updated).not.toEqual(original);
+        // The dead-domain network rule should no longer appear verbatim.
+        expect(updated).not.toContain('||anotherdeaddomain.examplee^');
+        // The cosmetic rule for the dead domain should also be gone.
+        expect(updated).not.toContain('example.notexisting##banner');
+        // Surviving non-dead rule should still be there.
+        expect(updated).toContain('||example.org^$third-party');
+    });
+
     it('should ignore domains in ignoreDomains set', async () => {
         fetch.mockResolvedValue(createSuccessResponse(
             ['example.notexisting', 'anotherdeaddomain.examplee'],
