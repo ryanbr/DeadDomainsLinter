@@ -138,7 +138,14 @@ async function processListAst(file, listAst, options) {
     let issuesCount = 0;
 
     // Promise-based semaphore to limit concurrency without busy-waiting.
+    //
+    // waitQueue is a head-indexed FIFO: dequeue advances waitHead instead of
+    // calling Array.prototype.shift(), which is O(n) and turns the queue into
+    // an O(n²) hot spot on large filter lists (every release would memmove the
+    // remaining waiters down by one). Consumed slots are nulled out so the
+    // resolver closures can be GC'd before the file finishes.
     const waitQueue = [];
+    let waitHead = 0;
     let running = 0;
 
     function acquire() {
@@ -151,9 +158,12 @@ async function processListAst(file, listAst, options) {
 
     function release() {
         running -= 1;
-        if (waitQueue.length > 0) {
+        if (waitHead < waitQueue.length) {
             running += 1;
-            waitQueue.shift()();
+            const next = waitQueue[waitHead];
+            waitQueue[waitHead] = undefined;
+            waitHead += 1;
+            next();
         }
     }
 
