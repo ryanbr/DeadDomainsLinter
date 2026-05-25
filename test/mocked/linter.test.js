@@ -211,10 +211,12 @@ describe('Linter mocked tests', () => {
         expect(r1.deadDomains).toEqual([shared]);
         expect(r2.deadDomains).toEqual([shared]);
 
-        // Pre-fix the same domain would trigger two fetches; with the
-        // promise cache it should be one (or zero if the second call landed
-        // post-resolution, but that's fine too).
-        expect(fetch.mock.calls.length).toBeLessThanOrEqual(1);
+        // Pre-fix, the same domain would trigger two fetches. With the
+        // promise cache the second lintRule call sees the in-flight entry
+        // and awaits the same batch, so fetch should be called exactly once.
+        // (The gated mock guarantees the second call runs before the first
+        // batch resolves, so it can't slip past the cache.)
+        expect(fetch.mock.calls.length).toBe(1);
     });
 
     it('evicts cache entries when the urlfilter batch fails so future calls retry', async () => {
