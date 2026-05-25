@@ -332,12 +332,22 @@ function modifyRule(ast, deadDomains) {
     }
 }
 
-// Promise-based cache for domain liveness. The key is the domain name; the
-// value is a Promise<boolean> that resolves to true for alive and false for
-// dead. Storing the promise (rather than the resolved boolean) lets concurrent
-// callers that race on the same domain share a single in-flight check instead
-// of each issuing their own urlfilter request.
-const domainsCheckCache = new Map();
+// Two-tier cache for domain liveness:
+//
+//   - resolvedCheckCache stores already-known booleans (true=alive, false=dead).
+//     Read synchronously on the hot path so cache hits don't allocate a .then
+//     or yield a microtask per domain.
+//   - inFlightCheckCache stores Promise<boolean> for lookups that have started
+//     but not yet resolved, so concurrent callers asking for the same domain
+//     share a single underlying urlfilter request instead of each issuing
+//     their own.
+//
+// A domain is in at most one of the two during steady state. While a batch is
+// in flight an entry lives in inFlightCheckCache; when the batch resolves the
+// derived .then handler moves it into resolvedCheckCache and the in-flight
+// entry stays (harmlessly, since the resolved map shadows it on lookup).
+const resolvedCheckCache = new Map();
+const inFlightCheckCache = new Map();
 
 /**
  * Runs a single urlfilter (+ optional DNS) batch and returns the set of
@@ -402,8 +412,24 @@ async function findDeadDomains(domains, options) {
         domains.filter((domain) => !options.ignoreDomains.has(domain)),
     );
 
-    // Pick up only the domains that have no cached or in-flight check.
-    const toCheck = nonIgnoredDomains.filter((domain) => !domainsCheckCache.has(domain));
+    const deadDomains = [];
+    const pendingDomains = [];
+    const toCheck = [];
+
+    // Bucket each domain by its cache state. Resolved entries are handled
+    // synchronously here so a rule with all-cached domains never yields a
+    // microtask per lookup.
+    nonIgnoredDomains.forEach((domain) => {
+        if (resolvedCheckCache.has(domain)) {
+            if (!resolvedCheckCache.get(domain)) {
+                deadDomains.push(domain);
+            }
+        } else if (inFlightCheckCache.has(domain)) {
+            pendingDomains.push(domain);
+        } else {
+            toCheck.push(domain);
+        }
+    });
 
     if (toCheck.length > 0) {
         // Share one underlying batch across every domain in this batch so a
@@ -411,27 +437,39 @@ async function findDeadDomains(domains, options) {
         const batchPromise = runDeadCheckBatch(toCheck, options);
 
         toCheck.forEach((domain) => {
-            // The cached promise resolves to alive-ness (true=alive, false=dead).
-            domainsCheckCache.set(domain, batchPromise.then((deadSet) => !deadSet.has(domain)));
+            const derived = batchPromise.then((deadSet) => {
+                const isAlive = !deadSet.has(domain);
+                resolvedCheckCache.set(domain, isAlive);
+                return isAlive;
+            });
+            inFlightCheckCache.set(domain, derived);
+            pendingDomains.push(domain);
         });
 
         // On batch failure, evict the in-flight entries so subsequent calls retry
-        // instead of forever replaying the rejection.
+        // instead of forever replaying the rejection. Successful batches don't
+        // need eviction — resolvedCheckCache shadows the in-flight entry from
+        // that point on.
         batchPromise.catch(() => {
             toCheck.forEach((domain) => {
-                domainsCheckCache.delete(domain);
+                inFlightCheckCache.delete(domain);
             });
         });
     }
 
-    const liveness = await Promise.all(
-        nonIgnoredDomains.map((domain) => domainsCheckCache.get(domain)
-            .then((isAlive) => ({ domain, isAlive }))),
-    );
+    if (pendingDomains.length > 0) {
+        const liveness = await Promise.all(
+            pendingDomains.map((domain) => inFlightCheckCache.get(domain)
+                .then((isAlive) => ({ domain, isAlive }))),
+        );
+        liveness.forEach(({ domain, isAlive }) => {
+            if (!isAlive) {
+                deadDomains.push(domain);
+            }
+        });
+    }
 
-    return liveness
-        .filter(({ isAlive }) => !isAlive)
-        .map(({ domain }) => domain);
+    return deadDomains;
 }
 
 /**
