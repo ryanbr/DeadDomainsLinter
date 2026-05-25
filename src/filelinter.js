@@ -52,12 +52,21 @@ async function confirm(message, options) {
 
     const answer = await consola.prompt(message, {
         type: 'select',
-        options: ['Yes', 'No', 'Exit'],
+        options: ['Yes', 'Yes to all', 'No', 'Exit'],
     });
 
     if (typeof answer === 'symbol' || answer === 'Exit') {
         consola.info('Cancelled by user');
         process.exit(0);
+    }
+
+    if (answer === 'Yes to all') {
+        // Flip the options object's auto flag so every subsequent confirm()
+        // short-circuits via the auto branch above. cli.js builds a fresh
+        // linterOptions per file, so this stays scoped to the current file.
+        // eslint-disable-next-line no-param-reassign
+        options.auto = true;
+        return true;
     }
 
     return answer === 'Yes';

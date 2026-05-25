@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const consola = require('consola');
 const fileLinter = require('../../src/filelinter');
 const { createSuccessResponse } = require('./mockresponse');
 
@@ -63,6 +64,31 @@ describe('File linter with mocked API', () => {
             expect(fs.readFileSync(inputPath, 'utf8')).toEqual(originalInput);
         } finally {
             if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        }
+    });
+
+    it('"Yes to all" flips options.auto so later prompts skip consola.prompt', async () => {
+        fetch.mockResolvedValue(createSuccessResponse(
+            ['example.notexisting', 'anotherdeaddomain.examplee'],
+            ['example.org'],
+        ));
+
+        // Start with auto=false so the first prompt actually fires. The first
+        // call returns "Yes to all"; any further call would mean the auto
+        // short-circuit failed.
+        const promptSpy = jest.spyOn(consola, 'prompt').mockImplementationOnce(async () => 'Yes to all');
+
+        try {
+            // lintFile asks per-rule. The first rule's prompt returns "Yes to
+            // all"; rules 2..N must not call prompt again.
+            const options = { auto: false, ignoreDomains: new Set() };
+            const fileResult = await fileLinter.lintFile('test/resources/filter.txt', options);
+
+            expect(promptSpy).toHaveBeenCalledTimes(1);
+            expect(options.auto).toBe(true);
+            expect(fileResult.results).toHaveLength(4);
+        } finally {
+            promptSpy.mockRestore();
         }
     });
 
