@@ -126,7 +126,10 @@ function getDeadDomains(fileResult) {
  * Entry point into the CLI program logic.
  */
 async function main() {
-    consola.info(`Starting ${packageJson.name} v${packageJson.version}`);
+    // Strip the npm scope (@adguard/) from the displayed name so the CLI
+    // banner matches the binary the user actually invoked.
+    const displayName = packageJson.name.replace(/^@[^/]+\//, '');
+    consola.info(`Starting ${displayName} v${packageJson.version}`);
 
     // If --export is passed without a filename, generate a default one.
     if (argv.export === '') {
