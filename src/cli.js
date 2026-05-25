@@ -107,7 +107,7 @@ async function main() {
     consola.info(`Starting ${packageJson.name} v${packageJson.version}`);
 
     // If --export is passed without a filename, generate a default one.
-    if (argv.export === true) {
+    if (argv.export === '') {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         argv.export = `dead_domains_${timestamp}.txt`;
     }
@@ -163,11 +163,11 @@ async function main() {
 
             const linterOptions = {
                 show: argv.show,
-                auto: argv.auto || !!argv.export,
+                auto: argv.auto || argv.export !== undefined,
                 useDNS: argv.dnscheck,
                 commentOut: argv.commentout,
                 concurrent: argv.concurrent,
-                domainsOnly: !!argv.export,
+                domainsOnly: argv.export !== undefined,
                 deadDomains: predefinedDomains,
                 ignoreDomains,
             };

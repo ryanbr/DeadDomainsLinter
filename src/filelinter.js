@@ -168,8 +168,12 @@ async function processListAst(file, listAst, options) {
             } finally {
                 analyzedRules += 1;
 
-                if (analyzedRules % 100 === 0) {
-                    consola.info(`Analyzed ${analyzedRules}/${totalRules} rules, found ${issuesCount} issues`);
+                if (analyzedRules % 100 === 0 || analyzedRules === totalRules) {
+                    const msg = `Analyzed ${analyzedRules}/${totalRules} rules, found ${issuesCount} issues`;
+                    process.stdout.write(`\r${msg}`);
+                }
+                if (analyzedRules === totalRules) {
+                    process.stdout.write('\n');
                 }
 
                 release();
