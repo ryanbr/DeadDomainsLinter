@@ -52,7 +52,7 @@ async function confirm(message, options) {
 
     const answer = await consola.prompt(message, {
         type: 'select',
-        options: ['Yes', 'Yes to all', 'No', 'Exit'],
+        options: ['Yes', 'Yes to all', 'No', 'No to all', 'Exit'],
     });
 
     if (typeof answer === 'symbol' || answer === 'Exit') {
@@ -67,6 +67,15 @@ async function confirm(message, options) {
         // eslint-disable-next-line no-param-reassign
         options.auto = true;
         return true;
+    }
+
+    if (answer === 'No to all') {
+        // Symmetric to "Yes to all": flip the show flag so every subsequent
+        // confirm() in this file auto-declines, including the file-level
+        // "Apply modifications to the file?" prompt (skipping the write).
+        // eslint-disable-next-line no-param-reassign
+        options.show = true;
+        return false;
     }
 
     return answer === 'Yes';

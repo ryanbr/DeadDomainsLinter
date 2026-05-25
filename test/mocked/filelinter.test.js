@@ -92,6 +92,30 @@ describe('File linter with mocked API', () => {
         }
     });
 
+    it('"No to all" flips options.show so later prompts skip consola.prompt', async () => {
+        fetch.mockResolvedValue(createSuccessResponse(
+            ['example.notexisting', 'anotherdeaddomain.examplee'],
+            ['example.org'],
+        ));
+
+        const promptSpy = jest.spyOn(consola, 'prompt').mockImplementationOnce(async () => 'No to all');
+
+        try {
+            const options = { auto: false, ignoreDomains: new Set() };
+            const fileResult = await fileLinter.lintFile('test/resources/filter.txt', options);
+
+            // Prompt is called exactly once; the remaining three rules
+            // auto-decline via the show short-circuit. lintFile returns null
+            // because no results were confirmed, which is the same as a
+            // file the user declined every fix on.
+            expect(promptSpy).toHaveBeenCalledTimes(1);
+            expect(options.show).toBe(true);
+            expect(fileResult).toBeNull();
+        } finally {
+            promptSpy.mockRestore();
+        }
+    });
+
     it('should ignore domains in ignoreDomains set', async () => {
         fetch.mockResolvedValue(createSuccessResponse(
             ['example.notexisting', 'anotherdeaddomain.examplee'],
