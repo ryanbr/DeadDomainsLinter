@@ -92,6 +92,82 @@ describe('File linter with mocked API', () => {
         }
     });
 
+    it('"Yes to all" also auto-confirms the file-level prompt and writes the file', async () => {
+        fetch.mockResolvedValue(createSuccessResponse(
+            ['example.notexisting', 'anotherdeaddomain.examplee'],
+            ['example.org'],
+        ));
+
+        // First (and only expected) prompt returns 'Yes to all'. If the
+        // file-level prompt ever reaches consola.prompt the spy goes back
+        // to the real implementation and the test hangs (or fails the
+        // toHaveBeenCalledTimes assertion).
+        const promptSpy = jest.spyOn(consola, 'prompt').mockImplementationOnce(async () => 'Yes to all');
+
+        const inputPath = 'test/resources/filter.txt';
+        const originalInput = fs.readFileSync(inputPath, 'utf8');
+        const outputPath = path.join(os.tmpdir(), `filter.yta.${process.pid}.${Date.now()}.txt`);
+
+        try {
+            const options = { auto: false, ignoreDomains: new Set(), output: outputPath };
+            const fileResult = await fileLinter.lintFile(inputPath, options);
+            await fileLinter.applyFileChanges(inputPath, fileResult, options);
+
+            // One prompt total across both calls — the per-rule one that
+            // returned "Yes to all". The file-level prompt must have hit
+            // the auto-confirm short-circuit.
+            expect(promptSpy).toHaveBeenCalledTimes(1);
+            expect(options.auto).toBe(true);
+            // applyFileChanges wrote to the output path (dead lines removed).
+            expect(fs.existsSync(outputPath)).toBe(true);
+            expect(fs.readFileSync(outputPath, 'utf8')).not.toEqual(originalInput);
+            // Input file untouched.
+            expect(fs.readFileSync(inputPath, 'utf8')).toEqual(originalInput);
+        } finally {
+            promptSpy.mockRestore();
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        }
+    });
+
+    it('"No to all" mid-file auto-declines the file-level prompt and writes nothing', async () => {
+        fetch.mockResolvedValue(createSuccessResponse(
+            ['example.notexisting', 'anotherdeaddomain.examplee'],
+            ['example.org'],
+        ));
+
+        // Confirm the first two rules normally, then "No to all" on the
+        // third. The fourth rule auto-declines, and the file-level prompt
+        // also auto-declines — total prompts = 3.
+        const promptSpy = jest.spyOn(consola, 'prompt')
+            .mockImplementationOnce(async () => 'Yes')
+            .mockImplementationOnce(async () => 'Yes')
+            .mockImplementationOnce(async () => 'No to all');
+
+        const inputPath = 'test/resources/filter.txt';
+        const originalInput = fs.readFileSync(inputPath, 'utf8');
+        const outputPath = path.join(os.tmpdir(), `filter.nta.${process.pid}.${Date.now()}.txt`);
+
+        try {
+            const options = { auto: false, ignoreDomains: new Set(), output: outputPath };
+            const fileResult = await fileLinter.lintFile(inputPath, options);
+            // lintFile returns the two pre-"No to all" confirmations; not null.
+            expect(fileResult).not.toBeNull();
+            expect(fileResult.results).toHaveLength(2);
+
+            await fileLinter.applyFileChanges(inputPath, fileResult, options);
+
+            expect(promptSpy).toHaveBeenCalledTimes(3);
+            expect(options.show).toBe(true);
+            // File-level confirm declined → no write happened.
+            expect(fs.existsSync(outputPath)).toBe(false);
+            // Input file untouched.
+            expect(fs.readFileSync(inputPath, 'utf8')).toEqual(originalInput);
+        } finally {
+            promptSpy.mockRestore();
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        }
+    });
+
     it('"No to all" flips options.show so later prompts skip consola.prompt', async () => {
         fetch.mockResolvedValue(createSuccessResponse(
             ['example.notexisting', 'anotherdeaddomain.examplee'],
