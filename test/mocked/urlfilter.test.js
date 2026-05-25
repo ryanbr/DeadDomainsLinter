@@ -1,17 +1,19 @@
-jest.mock('node-fetch');
-
-const fetch = require('node-fetch');
 const urlfilter = require('../../src/urlfilter');
 const { createRateLimitedResponse, createSuccessResponse } = require('./mockresponse');
 
 describe('urlfilter tests with mocked api calls', () => {
+    let fetch;
+    const originalFetch = global.fetch;
+
     beforeEach(() => {
-        fetch.mockReset();
+        fetch = jest.fn();
+        global.fetch = fetch;
         jest.useFakeTimers();
     });
 
     afterEach(() => {
         jest.useRealTimers();
+        global.fetch = originalFetch;
     });
 
     const testRetryAfter = async (retryAfterValue, domain = 'example.notexisting') => {

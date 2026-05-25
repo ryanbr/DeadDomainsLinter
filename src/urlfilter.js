@@ -1,4 +1,4 @@
-const punycode = require('node:punycode');
+const punycode = require('punycode/');
 const { fetchWithRetry, trimFqdn } = require('./fetchdomains');
 
 const CHUNK_SIZE = 25;

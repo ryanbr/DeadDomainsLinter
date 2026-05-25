@@ -1,12 +1,18 @@
-jest.mock('node-fetch');
-const fetch = require('node-fetch');
 const agtree = require('@adguard/agtree');
-const punycode = require('node:punycode');
+const punycode = require('punycode/');
 const checker = require('../../src/linter');
 
 describe('Linter mocked tests', () => {
+    let fetch;
+    const originalFetch = global.fetch;
+
     beforeEach(() => {
-        fetch.mockReset();
+        fetch = jest.fn();
+        global.fetch = fetch;
+    });
+
+    afterEach(() => {
+        global.fetch = originalFetch;
     });
 
     const testLintRule = (rule, expected, ignoreDomains = new Set()) => {

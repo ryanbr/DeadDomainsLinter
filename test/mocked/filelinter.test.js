@@ -1,11 +1,17 @@
-jest.mock('node-fetch');
-const fetch = require('node-fetch');
 const fileLinter = require('../../src/filelinter');
 const { createSuccessResponse } = require('./mockresponse');
 
 describe('File linter with mocked API', () => {
+    let fetch;
+    const originalFetch = global.fetch;
+
     beforeEach(() => {
-        fetch.mockReset();
+        fetch = jest.fn();
+        global.fetch = fetch;
+    });
+
+    afterEach(() => {
+        global.fetch = originalFetch;
     });
 
     it('test a simple automatic run with mocked API', async () => {

@@ -1,8 +1,7 @@
 const dns = require('dns');
 const consola = require('consola');
-const https = require('https');
-const fetch = require('node-fetch');
-const punycode = require('node:punycode');
+const { Agent } = require('undici');
+const punycode = require('punycode/');
 
 /**
  * 503 - Service Unavailable
@@ -20,20 +19,20 @@ const DEFAULT_MAX_ATTEMPTS = 2;
 const URLFILTER_URL = 'https://urlfilter.adtidy.org/v2/checkDomains';
 
 /**
- * Default agent for requests to adtidy API
+ * Default dispatcher for requests to adtidy API.
+ *
+ * Built-in fetch (undici) is prone to ENOTFOUND errors under many parallel
+ * requests, so we wire an undici Agent with a custom DNS lookup that caches
+ * resolution results permanently. We also use a semaphore-like approach
+ * to forbid parallel DNS queries.
  */
-const httpAgent = new https.Agent({
-    keepAlive: true,
+const dispatcher = new Agent({
     // eslint-disable-next-line no-use-before-define
-    lookup: dnsLookup,
+    connect: { lookup: dnsLookup },
 });
 
 /**
- * When using native node fetch it is easy to run into ENOTFOUND errors when
- * there are many parallel requests. In order to avoid that, we use node-fetch
- * with a custom DNS lookup function that caches resolution result permanently.
- * In addition to that, we use a semaphore-like approach to forbid parallel
- * DNS queries.
+ * In-flight and cached DNS resolutions, keyed by hostname.
  */
 const dnsProcessing = {};
 const dnsCache = {};
@@ -134,7 +133,7 @@ async function fetchWithRetry(domains, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         // eslint-disable-next-line no-await-in-loop
         const response = await fetch(url, {
-            agent: httpAgent,
+            dispatcher,
         });
 
         if (response.ok) {
