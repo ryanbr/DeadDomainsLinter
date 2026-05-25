@@ -440,16 +440,18 @@ async function findDeadDomains(domains, options) {
             const derived = batchPromise.then((deadSet) => {
                 const isAlive = !deadSet.has(domain);
                 resolvedCheckCache.set(domain, isAlive);
+                // Drop the in-flight entry now that the resolved one shadows it,
+                // so the cache footprint stays at one entry per domain instead
+                // of two for the rest of the run.
+                inFlightCheckCache.delete(domain);
                 return isAlive;
             });
             inFlightCheckCache.set(domain, derived);
             pendingDomains.push(domain);
         });
 
-        // On batch failure, evict the in-flight entries so subsequent calls retry
-        // instead of forever replaying the rejection. Successful batches don't
-        // need eviction — resolvedCheckCache shadows the in-flight entry from
-        // that point on.
+        // On batch failure, evict the in-flight entries so subsequent calls
+        // retry instead of forever replaying the rejection.
         batchPromise.catch(() => {
             toCheck.forEach((domain) => {
                 inFlightCheckCache.delete(domain);
