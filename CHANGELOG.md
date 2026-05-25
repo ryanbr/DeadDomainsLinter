@@ -7,6 +7,71 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 [Keep a Changelog]: https://keepachangelog.com/en/1.0.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 
+## [2.0.0] - 2026-05-25
+
+Fork release with substantial divergence from upstream 1.0.33. Major bump
+reflects new flags, the migration off `node-fetch`/`node:punycode`, and the
+rewritten caching/concurrency internals — behaviour for existing flags is
+backward-compatible, but the userland dep set and on-disk progress output
+changed enough to warrant the version jump.
+
+### Added
+
+- `-o`, `--output <path>`: write the modified filter list to a separate path
+  instead of overwriting the input. Incompatible with `--export`; requires
+  exactly one input file.
+- `--diff[=<path>]`: emit a unified diff of the proposed removals/modifications
+  to a `.patch` file (default `dead_domains_<timestamp>.patch`) without
+  touching the input. Auto-confirms; incompatible with `--export` and
+  `--output`.
+- `-c`, `--concurrent <n>`: cap concurrent rule processing (default 10).
+- Bare `--export` (no value) now generates `dead_domains_<timestamp>.txt`.
+- Per-rule confirmation prompt gains `Yes to all` and `No to all` bulk
+  choices. Both are scoped per-file: choosing one on file A does not carry
+  into file B in a multi-file run.
+- Prompt also gains an `Exit` option, and `Ctrl+C` exits cleanly instead of
+  hanging.
+- Progress now reports `Analyzed X/Y rules, found Z issues` in-place via
+  `\r`, with totals shown on the final tick.
+
+### Changed
+
+- Switched from `node-fetch@2` to the built-in `fetch` backed by an
+  `undici.Agent` with a custom DNS cache. Eliminates the
+  `DEP0040 — punycode is deprecated` warning that fired on every run.
+- Replaced `node:punycode` usage with the userland `punycode` package for the
+  same reason.
+- DNS-check throughput improved: replaced the busy-wait semaphore with a
+  promise-based one, and rotated across 4 public resolvers
+  (Google/Cloudflare/Quad9/OpenDNS).
+- `processListAst` semaphore uses a head-indexed FIFO instead of
+  `Array.shift()` — O(n²) → O(n) in the queue (200ms recovered on a 100k-rule
+  list).
+- Domain liveness cache split into two tiers: a synchronously-readable
+  resolved map and an in-flight promise map. Concurrent callers asking for
+  the same uncached domain share one urlfilter request instead of each
+  issuing their own. Cache hits no longer allocate per-domain microtasks.
+- Replaced `Array.includes` lookups with `Set`/`Map` for O(1) membership in
+  the hot path.
+- Startup banner drops the `@adguard/` scope — matches the binary name the
+  user invoked.
+- `--output` validation error now echoes the glob expression so the user can
+  see what was searched.
+- Dependencies bumped within ranges; `consola` 3.2.3 → 3.4.2.
+
+### Fixed
+
+- `dnsLookup` no longer NPE's when `dns.lookup` returns an error or empty
+  address list (covers both the cache-hit and fresh-resolve paths).
+- In-flight cache entries are evicted into the resolved map on success,
+  halving the steady-state cache footprint.
+- Promise-cache dedup test now asserts the fetch count is exactly 1 (was
+  `<= 1`, which would have silently passed a regression that skipped the
+  fetch entirely).
+- Skip `modifyRule` cloning when exporting — pure speedup for `--export`
+  runs.
+- ESLint warnings/errors cleared across the project.
+
 ## [1.0.33] - 2025-09-01
 
 ### Changed
