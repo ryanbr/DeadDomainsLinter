@@ -148,6 +148,12 @@ async function processListAst(file, listAst, options) {
     let waitHead = 0;
     let running = 0;
 
+    /**
+     * Take a slot in the semaphore. Resolves immediately if there's room,
+     * otherwise queues until a release() makes one available.
+     *
+     * @returns {Promise<void>} Resolves once a slot is held by the caller.
+     */
     function acquire() {
         if (running < (options.concurrent || DEFAULT_CONCURRENT)) {
             running += 1;
@@ -156,6 +162,9 @@ async function processListAst(file, listAst, options) {
         return new Promise((resolve) => { waitQueue.push(resolve); });
     }
 
+    /**
+     * Give the caller's slot back, handing it to the next queued waiter if any.
+     */
     function release() {
         running -= 1;
         if (waitHead < waitQueue.length) {

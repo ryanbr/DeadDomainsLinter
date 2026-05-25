@@ -4,10 +4,10 @@ const { promisify } = require('util');
 // Note, that we don't use AdGuard DNS servers here in order to not add checked
 // domains to the next domains snapshot.
 const DNS_SERVERS = [
-    '8.8.8.8',        // Google
-    '1.1.1.1',        // Cloudflare
-    '9.9.9.9',        // Quad9
-    '208.67.222.222',  // OpenDNS
+    '8.8.8.8', // Google
+    '1.1.1.1', // Cloudflare
+    '9.9.9.9', // Quad9
+    '208.67.222.222', // OpenDNS
 ];
 
 let currentIndex = 0;
