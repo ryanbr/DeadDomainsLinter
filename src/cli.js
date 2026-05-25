@@ -20,10 +20,20 @@ const { argv } = require('yargs')
         '$0 -a -i filter.txt',
         'scan filter.txt and automatically apply suggested fixes',
     )
+    .example(
+        '$0 -a -i filter.txt -o filter.cleaned.txt',
+        'scan filter.txt, apply fixes, and write the result to filter.cleaned.txt instead of overwriting the input',
+    )
     .option('input', {
         alias: 'i',
         type: 'string',
         description: 'glob expression that selects files that the tool will scan.',
+    })
+    .option('output', {
+        alias: 'o',
+        type: 'string',
+        description: 'Write the modified filter list to this path instead of overwriting'
+            + ' the input. Requires exactly one input file; incompatible with --export.',
     })
     .option('dnscheck', {
         type: 'boolean',
@@ -112,9 +122,19 @@ async function main() {
         argv.export = `dead_domains_${timestamp}.txt`;
     }
 
+    if (argv.output !== undefined && argv.export !== undefined) {
+        consola.error('--output cannot be combined with --export');
+        process.exit(1);
+    }
+
     const globExpression = argv.input;
     const files = glob.globSync(globExpression);
     const plural = files.length > 1 || files.length === 0;
+
+    if (argv.output !== undefined && files.length !== 1) {
+        consola.error(`--output requires exactly one input file (matched ${files.length})`);
+        process.exit(1);
+    }
 
     let predefinedDomains;
     if (argv.import) {
@@ -170,6 +190,7 @@ async function main() {
                 domainsOnly: argv.export !== undefined,
                 deadDomains: predefinedDomains,
                 ignoreDomains,
+                output: argv.output,
             };
 
             // eslint-disable-next-line no-await-in-loop

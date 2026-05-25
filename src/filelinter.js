@@ -25,6 +25,8 @@ const DEFAULT_CONCURRENT = 10;
  * @property {Array<string>} deadDomains - Pre-defined list of dead domains. If
  * it is specified, skip all other checks.
  * @property {Set<string>} ignoreDomains - Set of domains to ignore.
+ * @property {string} [output] - If set, write the modified filter list to this
+ * path instead of overwriting the input file.
  */
 
 /**
@@ -299,7 +301,8 @@ async function applyFileChanges(file, fileResult, options) {
         return;
     }
 
-    consola.info(`Applying modifications to ${file}`);
+    const outputPath = options.output || file;
+    consola.info(`Applying modifications to ${outputPath}`);
 
     const { listAst, results } = fileResult;
 
@@ -324,8 +327,8 @@ async function applyFileChanges(file, fileResult, options) {
     // available in a rule AST.
     const newContents = agtree.FilterListParser.generate(listAst, true);
 
-    // Update the filter list file.
-    fs.writeFileSync(file, newContents);
+    // Write the filter list to disk: --output if set, otherwise overwrite the input.
+    fs.writeFileSync(outputPath, newContents);
 }
 
 module.exports = {
