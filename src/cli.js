@@ -131,8 +131,12 @@ async function main() {
     const files = glob.globSync(globExpression);
     const plural = files.length > 1 || files.length === 0;
 
+    consola.info(`Found ${files.length} file${plural ? 's' : ''} matching ${globExpression}`);
+
     if (argv.output !== undefined && files.length !== 1) {
-        consola.error(`--output requires exactly one input file (matched ${files.length})`);
+        consola.error(
+            `--output requires exactly one input file, but glob ${globExpression} matched ${files.length}`,
+        );
         process.exit(1);
     }
 
@@ -153,8 +157,6 @@ async function main() {
 
         consola.info(`Imported ${predefinedDomains.length} dead domains`);
     }
-
-    consola.info(`Found ${files.length} file${plural ? 's' : ''} matching ${globExpression}`);
 
     let ignoreDomainsList = [];
     if (argv.ignore) {
