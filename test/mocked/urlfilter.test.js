@@ -58,15 +58,58 @@ describe('urlfilter tests with mocked api calls', () => {
         const promise = urlfilter.findDeadDomains(['example.notexisting']);
         const rejection = expect(promise).rejects.toThrow();
 
-        // Only ONE inter-attempt sleep (between attempt 1 and 2) should occur.
-        // After advancing past it, attempt 2 fires, gets 429, and rejects
-        // immediately — without a second 2s sleep. If the final attempt still
-        // slept, this rejection would not settle until 4s and the test would
-        // hang.
+        // maxAttempts is 3, so there are sleeps after attempts 1 and 2 but NOT
+        // after the final attempt 3. Advancing past the two 2s sleeps lets the
+        // third attempt fire and reject immediately; if the final attempt still
+        // slept, the rejection would not settle and the test would hang.
+        await jest.advanceTimersByTimeAsync(2000);
         await jest.advanceTimersByTimeAsync(2000);
         await rejection;
 
-        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('retries on a network-level fetch failure and succeeds', async () => {
+        // Pin jitter so the backoff is deterministic: factor 0.5 + 0.5 = 1.0,
+        // so the delay equals the base (500ms for attempt 1).
+        const rnd = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+        try {
+            // undici surfaces a transient connection failure (e.g. a keep-alive
+            // socket reset) as a thrown TypeError with the real reason on .cause.
+            const netErr = Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_SOCKET' } });
+            fetch.mockRejectedValueOnce(netErr);
+            fetch.mockResolvedValueOnce(createSuccessResponse(['example.notexisting']));
+
+            const promise = urlfilter.findDeadDomains(['example.notexisting']);
+            await jest.advanceTimersByTimeAsync(500); // network-retry backoff
+            const result = await promise;
+
+            expect(fetch).toHaveBeenCalledTimes(2);
+            expect(result).toEqual(['example.notexisting']);
+        } finally {
+            rnd.mockRestore();
+        }
+    });
+
+    it('gives up after repeated network failures, surfacing the underlying cause', async () => {
+        const rnd = jest.spyOn(Math, 'random').mockReturnValue(0.5);
+        try {
+            const netErr = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+            fetch.mockRejectedValue(netErr); // every attempt fails at the network level
+
+            const promise = urlfilter.findDeadDomains(['example.notexisting']);
+            const rejection = expect(promise).rejects.toThrow(/ECONNRESET/);
+
+            // maxAttempts is 3 -> backoffs after attempts 1 and 2: base*2^0=500ms
+            // then base*2^1=1000ms (jitter pinned to factor 1.0).
+            await jest.advanceTimersByTimeAsync(500);
+            await jest.advanceTimersByTimeAsync(1000);
+            await rejection;
+
+            expect(fetch).toHaveBeenCalledTimes(3);
+        } finally {
+            rnd.mockRestore();
+        }
     });
 
     it('check a domain that we know does exist', async () => {
