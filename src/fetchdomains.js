@@ -13,7 +13,8 @@ const DECIMAL_BASE = 10;
 const ONE_SECOND_MS = 1000;
 
 /**
- * 2 retries for the first request and request after receiving retry-after header.
+ * Total number of attempts per request: the initial call plus one retry after
+ * a Retry-After response (i.e. 2 attempts = 1 retry).
  */
 const DEFAULT_MAX_ATTEMPTS = 2;
 const URLFILTER_URL = 'https://urlfilter.adtidy.org/v2/checkDomains';
@@ -135,7 +136,7 @@ function parseRetryAfter(retryAfter) {
  * Fetches a URL with retries respecting `Retry-After` headers.
  *
  * @param {string[]} domains - List of domains to fetch.
- * @param {number} [maxAttempts] - Maximum retry attempts
+ * @param {number} [maxAttempts] - Maximum total attempts (initial call + retries).
  * @throws {Error} If all attempts fail or fetch encounters network errors.
  * @returns {Promise<Response>} Fetch response.
  */
