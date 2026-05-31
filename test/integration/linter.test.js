@@ -260,9 +260,11 @@ describe('Linter', () => {
         );
 
         it(
-            'suggest removing the whole rule when domains in $denyallow are dead',
+            'drops the $denyallow modifier when its domains are dead, keeping the rule',
+            // $denyallow is an exclusion list — emptying it widens the rule
+            // rather than scoping it to nothing, so the rule must be kept.
             testLintRule('||example.org^$denyallow=example.notexisting1', {
-                remove: true,
+                suggestedRuleText: '||example.org^',
                 deadDomains: ['example.notexisting1'],
             }),
         );

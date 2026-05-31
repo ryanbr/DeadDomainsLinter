@@ -119,6 +119,27 @@ describe('Linter mocked tests', () => {
         new Set(['example.notexisting1']),
     ));
 
+    // $denyallow is an exclusion list, not a positive scope: dead domains in
+    // it must drop the modifier (or just the dead entries), never remove the
+    // whole rule — that would silently disable active blocking.
+    it('drops $denyallow modifier when its only domain is dead, keeping the rule', testLintRule(
+        '||ads.example^$denyallow=example.notexistingdomain',
+        { suggestedRuleText: '||ads.example^', deadDomains: ['example.notexistingdomain'] },
+    ));
+
+    it('drops $denyallow modifier when all its domains are dead, keeping the rule', testLintRule(
+        '||ads.example^$denyallow=example.notexisting1|example.notexisting2',
+        { suggestedRuleText: '||ads.example^', deadDomains: ['example.notexisting1', 'example.notexisting2'] },
+    ));
+
+    it('removes only dead entries from a mixed $denyallow list', testLintRule(
+        '||ads.example^$denyallow=example.notexistingdomain|google.com',
+        {
+            suggestedRuleText: '||ads.example^$denyallow=google.com',
+            deadDomains: ['example.notexistingdomain'],
+        },
+    ));
+
     // Cosmetic rules tests
     it('suggest removing an element hiding rule which was only for dead domains', testLintRule(
         'example.notexistingdomain##banner',

@@ -9,6 +9,15 @@ const utils = require('./utils');
 const DOMAIN_MODIFIERS = new Set(['domain', 'denyallow', 'from', 'to']);
 
 /**
+ * Subset of DOMAIN_MODIFIERS whose domain list is an EXCLUSION (the rule is
+ * suppressed for these domains) rather than a positive scope. Emptying an
+ * exclusion list widens the rule rather than narrowing it to nothing, so the
+ * "all permitted domains are dead -> remove the rule" heuristic must NOT apply
+ * to them — the modifier is simply dropped instead.
+ */
+const EXCLUSION_MODIFIERS = new Set(['denyallow']);
+
+/**
  * Regular expression that matches the domain in a network rule pattern.
  */
 const PATTERN_DOMAIN_REGEX = (() => {
@@ -252,6 +261,7 @@ function modifyNetworkRule(ast, deadDomains) {
         const modifier = newAst.modifiers.children[i];
 
         if (DOMAIN_MODIFIERS.has(modifier.modifier.value)) {
+            const isExclusion = EXCLUSION_MODIFIERS.has(modifier.modifier.value);
             const modifierDomains = extractModifierDomains(modifier);
 
             // Check if modifierDomains had at least one non-negated domain.
@@ -265,7 +275,7 @@ function modifyNetworkRule(ast, deadDomains) {
             // Check if filteredDomains now has at least one non-negated domain.
             const hasPermittedDomainsAfterFilter = filteredDomains.some((domain) => !domain.negated);
 
-            if (hasPermittedDomains && !hasPermittedDomainsAfterFilter) {
+            if (!isExclusion && hasPermittedDomains && !hasPermittedDomainsAfterFilter) {
                 // Suggest completely removing the rule if there are no
                 // permitted domains left now.
                 //
@@ -274,6 +284,12 @@ function modifyNetworkRule(ast, deadDomains) {
                 //
                 // The rule must be removed in this case as otherwise its
                 // scope will change to global.
+                //
+                // This only applies to positive-scope modifiers. For an
+                // exclusion modifier like $denyallow, an emptied list just
+                // means "no exceptions left", which widens the rule — the
+                // modifier is dropped below (via modifierIdxToRemove) and the
+                // rule is kept.
                 return null;
             }
 
