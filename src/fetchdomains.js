@@ -1,6 +1,6 @@
 const dns = require('dns');
 const consola = require('consola');
-const { Agent } = require('undici');
+const { Agent, setGlobalDispatcher } = require('undici');
 const punycode = require('punycode/');
 
 /**
@@ -26,11 +26,20 @@ const URLFILTER_URL = 'https://urlfilter.adtidy.org/v2/checkDomains';
  * requests, so we wire an undici Agent with a custom DNS lookup that caches
  * resolution results permanently. We also use a semaphore-like approach
  * to forbid parallel DNS queries.
+ *
+ * It is installed via setGlobalDispatcher rather than passed per-request as
+ * fetch(url, { dispatcher }). The per-request option is not reliably honoured
+ * by global fetch across the whole supported Node range (>=18) — on older 18.x
+ * it can be silently ignored, which would disable this DNS cache and bring back
+ * the ENOTFOUND-under-load problem with no error. setGlobalDispatcher is the
+ * documented, version-stable way to customise global fetch's agent, and this is
+ * a single-purpose CLI so a process-global dispatcher is fine.
  */
 const dispatcher = new Agent({
     // eslint-disable-next-line no-use-before-define
     connect: { lookup: dnsLookup },
 });
+setGlobalDispatcher(dispatcher);
 
 /**
  * In-flight and cached DNS resolutions, keyed by hostname.
@@ -150,10 +159,9 @@ async function fetchWithRetry(domains, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
     });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        // The custom DNS-caching dispatcher is installed globally above.
         // eslint-disable-next-line no-await-in-loop
-        const response = await fetch(url, {
-            dispatcher,
-        });
+        const response = await fetch(url);
 
         if (response.ok) {
             return response;
