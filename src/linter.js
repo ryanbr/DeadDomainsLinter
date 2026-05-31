@@ -84,7 +84,15 @@ function extractModifierDomains(modifier) {
         return [];
     }
 
-    const domainList = agtree.DomainListParser.parse(modifier.value.value, agtree.PIPE_MODIFIER_SEPARATOR);
+    // agtree 2.x DomainListParser.parse signature is (raw, options, baseOffset,
+    // separator) and defaults to comma; modifier domain lists ($domain=a|b)
+    // are pipe-separated, so pass PIPE_MODIFIER_SEPARATOR as the separator.
+    const domainList = agtree.DomainListParser.parse(
+        modifier.value.value,
+        agtree.defaultParserOptions,
+        0,
+        agtree.PIPE_MODIFIER_SEPARATOR,
+    );
     return domainList.children.map((domain) => {
         return {
             domain: domain.value,
@@ -116,7 +124,7 @@ function extractNetworkRuleDomains(ast) {
     for (let i = 0; i < ast.modifiers.children.length; i += 1) {
         const modifier = ast.modifiers.children[i];
 
-        if (DOMAIN_MODIFIERS.has(modifier.modifier.value)) {
+        if (DOMAIN_MODIFIERS.has(modifier.name.value)) {
             const modifierDomains = extractModifierDomains(modifier)
                 .map((domain) => domain.domain);
 
@@ -260,8 +268,8 @@ function modifyNetworkRule(ast, deadDomains) {
     for (let i = 0; i < newAst.modifiers.children.length; i += 1) {
         const modifier = newAst.modifiers.children[i];
 
-        if (DOMAIN_MODIFIERS.has(modifier.modifier.value)) {
-            const isExclusion = EXCLUSION_MODIFIERS.has(modifier.modifier.value);
+        if (DOMAIN_MODIFIERS.has(modifier.name.value)) {
+            const isExclusion = EXCLUSION_MODIFIERS.has(modifier.name.value);
             const modifierDomains = extractModifierDomains(modifier);
 
             // Check if modifierDomains had at least one non-negated domain.
@@ -388,7 +396,10 @@ async function runDeadCheckBatch(toCheck, options) {
         const batch = checkResult.slice(i, i + dnsBatchSize);
         // eslint-disable-next-line no-await-in-loop
         const results = await Promise.all(
-            batch.map((domain) => dnscheck.checkDomain(domain)
+            batch.map((domain) => dnscheck.checkDomain(domain, {
+                servers: options.dnsServers,
+                rotate: options.dnsRotate,
+            })
                 .then((exists) => ({ domain, exists }))),
         );
         results.forEach(({ domain, exists }) => {
@@ -501,6 +512,10 @@ async function findDeadDomains(domains, options) {
  * @property {Array<string>} deadDomains - Pre-defined list of dead domains. If
  * it is specified, skip all other checks.
  * @property {Set<string>} ignoreDomains - Set of domains to ignore.
+ * @property {Array<string>} [dnsServers] - Custom DNS resolver pool for the DNS
+ * check (overrides the defaults).
+ * @property {boolean} [dnsRotate] - If true, ambiguous DNS results fall back to
+ * the next server(s) until a definitive answer.
  */
 
 /**

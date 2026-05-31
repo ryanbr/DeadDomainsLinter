@@ -27,6 +27,10 @@ const DEFAULT_CONCURRENT = 10;
  * @property {Set<string>} ignoreDomains - Set of domains to ignore.
  * @property {string} [output] - If set, write the modified filter list to this
  * path instead of overwriting the input file.
+ * @property {Array<string>} [dnsServers] - Custom DNS resolver pool for the DNS
+ * check (overrides the defaults).
+ * @property {boolean} [dnsRotate] - If true, ambiguous DNS results fall back to
+ * the next server(s) until a definitive answer.
  */
 
 /**
@@ -98,13 +102,16 @@ async function confirm(message, options) {
  *
  * @param {string} file - Path to the file that's being processed.
  * @param {agtree.AnyRule} ast - AST of the rule that's being processed.
+ * @param {number} lineNumber - 1-based position of the rule in the filter list,
+ * i.e. its index in listAst.children plus one. agtree dropped node.loc (line
+ * info) in favour of numeric start/end offsets, and applyFileChanges indexes
+ * children by lineNumber - 1 anyway, so we carry the array position directly.
  * @param {FileLintOptions} options - Configuration for this linter run.
  * @returns {Promise<AstResult|null>} Returns null if nothing needs to be changed or
  * AstResult if the linter found any issues.
  */
-async function processRuleAst(file, ast, options) {
+async function processRuleAst(file, ast, lineNumber, options) {
     const line = ast.raws.text;
-    const lineNumber = ast.loc.start.line;
 
     try {
         consola.verbose(`Processing ${file}:${lineNumber}: ${line}`);
@@ -114,6 +121,8 @@ async function processRuleAst(file, ast, options) {
             concurrent: options.concurrent,
             deadDomains: options.deadDomains,
             ignoreDomains: options.ignoreDomains,
+            dnsServers: options.dnsServers,
+            dnsRotate: options.dnsRotate,
         });
 
         // If the result is empty, the line can be simply skipped.
@@ -194,11 +203,11 @@ async function processListAst(file, listAst, options) {
         }
     }
 
-    const processingResults = await Promise.all(listAst.children.map((ast) => {
+    const processingResults = await Promise.all(listAst.children.map((ast, index) => {
         return (async () => {
             await acquire();
             try {
-                const result = await processRuleAst(file, ast, options);
+                const result = await processRuleAst(file, ast, index + 1, options);
                 if (result !== null) {
                     issuesCount += 1;
                 }

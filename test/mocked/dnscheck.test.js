@@ -102,4 +102,72 @@ describe('dnscheck mocked tests', () => {
         expect(mockResolver.resolve).toHaveBeenCalledTimes(1);
         expect(mockResolver.resolve).toHaveBeenCalledWith('www.example.nonexisting', 'A', expect.any(Function));
     });
+
+    it('uses the custom server pool from options.servers', async () => {
+        mockResolver.resolve.mockImplementation((domain, rrtype, callback) => {
+            callback(null, ['1.2.3.4']);
+        });
+
+        await dnscheck.domainExists('some.domain', { servers: ['9.9.9.9'] });
+        expect(mockResolver.setServers).toHaveBeenCalledWith(['9.9.9.9']);
+    });
+
+    it('without rotate, a single ambiguous query concludes alive and does not fall back', async () => {
+        mockResolver.resolve.mockImplementation((domain, rrtype, callback) => {
+            callback(dnsError('ETIMEOUT'));
+        });
+
+        const result = await dnscheck.domainExists('some.domain', { servers: ['1.1.1.1', '8.8.8.8'] });
+        expect(result).toBe(true);
+        // Only one server is consulted when rotation is off.
+        expect(mockResolver.resolve).toHaveBeenCalledTimes(1);
+    });
+
+    it('rotate: an ambiguous result falls back to the next server, then concludes', async () => {
+        let call = 0;
+        mockResolver.resolve.mockImplementation((domain, rrtype, callback) => {
+            call += 1;
+            if (call === 1) {
+                callback(dnsError('ETIMEOUT')); // first server ambiguous
+            } else {
+                callback(null, ['1.2.3.4']); // next server resolves
+            }
+        });
+
+        const result = await dnscheck.domainExists('some.domain', { servers: ['a', 'b'], rotate: true });
+        expect(result).toBe(true);
+        // Fell back to a second server after the ambiguous first.
+        expect(mockResolver.resolve).toHaveBeenCalledTimes(2);
+    });
+
+    it('rotate: a definitive NXDOMAIN ends the rotation as dead without trying more servers', async () => {
+        mockResolver.resolve.mockImplementation((domain, rrtype, callback) => {
+            callback(dnsError('ENOTFOUND'));
+        });
+
+        const result = await dnscheck.domainExists('some.domain', { servers: ['a', 'b', 'c'], rotate: true });
+        expect(result).toBe(false);
+        expect(mockResolver.resolve).toHaveBeenCalledTimes(1);
+    });
+
+    it('rotate: every server ambiguous falls back to alive after trying them all', async () => {
+        mockResolver.resolve.mockImplementation((domain, rrtype, callback) => {
+            callback(dnsError('ESERVFAIL'));
+        });
+
+        const result = await dnscheck.domainExists('some.domain', { servers: ['a', 'b', 'c'], rotate: true });
+        expect(result).toBe(true);
+        expect(mockResolver.resolve).toHaveBeenCalledTimes(3);
+    });
+
+    it('rotate works without a custom pool: rotates over the default servers', async () => {
+        mockResolver.resolve.mockImplementation((domain, rrtype, callback) => {
+            callback(dnsError('ETIMEOUT')); // every server ambiguous
+        });
+
+        // No `servers` option — rotation must fall back over DEFAULT_DNS_SERVERS.
+        const result = await dnscheck.domainExists('some.domain', { rotate: true });
+        expect(result).toBe(true);
+        expect(mockResolver.resolve).toHaveBeenCalledTimes(dnscheck.DEFAULT_DNS_SERVERS.length);
+    });
 });

@@ -45,6 +45,16 @@ const { argv } = require('yargs')
         type: 'boolean',
         description: 'Double-check dead domains with a DNS query.',
     })
+    .option('dns', {
+        type: 'string',
+        description: 'Comma-separated list of DNS servers to use for the DNS check,'
+            + ' overriding the built-in pool (e.g. --dns=8.8.8.8,1.1.1.1).',
+    })
+    .option('dns-rotate', {
+        type: 'boolean',
+        description: 'On an ambiguous DNS result (timeout/SERVFAIL), retry the domain against'
+            + ' the next server(s) until a definitive answer instead of giving up.',
+    })
     .option('commentout', {
         type: 'boolean',
         description: 'Comment out rules instead of removing them.',
@@ -94,6 +104,7 @@ const { argv } = require('yargs')
     .default('auto', false)
     .default('show', false)
     .default('verbose', false)
+    .default('dns-rotate', false)
     .version()
     .help('h')
     .alias('h', 'help');
@@ -151,6 +162,26 @@ async function main() {
     if (argv.diff !== undefined && (argv.export !== undefined || argv.output !== undefined)) {
         consola.error('--diff cannot be combined with --export or --output');
         process.exit(1);
+    }
+
+    // Parse a custom DNS server pool from --dns.
+    let dnsServers;
+    if (argv.dns !== undefined) {
+        dnsServers = argv.dns.split(',').map((s) => s.trim()).filter((s) => s !== '');
+        if (dnsServers.length === 0) {
+            consola.error('--dns was given but no server addresses could be parsed from it');
+            process.exit(1);
+        }
+    }
+
+    // --dns / --dns-rotate only matter when the DNS check is enabled.
+    if (!argv.dnscheck && (dnsServers || argv.dnsRotate)) {
+        consola.warn('--dns/--dns-rotate have no effect because the DNS check is disabled (--no-dnscheck)');
+    }
+
+    if (argv.dnscheck) {
+        const pool = dnsServers || ['(built-in pool)'];
+        consola.info(`DNS check using ${pool.join(', ')}${argv.dnsRotate ? ' with fallback rotation' : ''}`);
     }
 
     const globExpression = argv.input;
@@ -223,6 +254,8 @@ async function main() {
                 deadDomains: predefinedDomains,
                 ignoreDomains,
                 output: argv.output,
+                dnsServers,
+                dnsRotate: argv.dnsRotate,
             };
 
             // eslint-disable-next-line no-await-in-loop
