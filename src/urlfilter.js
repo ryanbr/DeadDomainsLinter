@@ -1,3 +1,4 @@
+const consola = require('consola');
 const punycode = require('punycode/');
 const { fetchWithRetry, trimFqdn } = require('./fetchdomains');
 
@@ -38,14 +39,20 @@ async function findDeadDomains(domains, chunkSize = CHUNK_SIZE) {
             // eslint-disable-next-line no-restricted-syntax
             for (const domain of chunk) {
                 const domainData = data[punycode.toASCII(trimFqdn(domain))];
-                // Only flag a domain dead when the response definitively says
-                // so. A missing entry or missing `info` (partial/malformed
-                // record, per-domain error) is ambiguous, so leave the domain
-                // alive rather than NPE on domainData.info and fail the whole
-                // chunk over a single bad record.
-                if (domainData && domainData.info
-                    && domainData.info.registered_domain_used_last_24_hours === false) {
-                    result.push(domain);
+                if (domainData && domainData.info) {
+                    // Only flag a domain dead when the response definitively
+                    // says it wasn't used recently.
+                    if (domainData.info.registered_domain_used_last_24_hours === false) {
+                        result.push(domain);
+                    }
+                } else {
+                    // Entry absent or missing `info` (partial/malformed record,
+                    // per-domain error). This is ambiguous, so leave the domain
+                    // alive (keep its rule) rather than NPE on domainData.info
+                    // and fail the whole chunk over one bad record. Log at
+                    // verbose level so a systemic API problem is diagnosable
+                    // with -v instead of silently looking like a clean run.
+                    consola.verbose(`No usable urlfilter data for ${domain}; treating as alive`);
                 }
             }
         } catch (ex) {

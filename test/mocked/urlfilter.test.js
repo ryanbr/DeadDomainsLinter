@@ -1,3 +1,4 @@
+const consola = require('consola');
 const urlfilter = require('../../src/urlfilter');
 const { createRateLimitedResponse, createSuccessResponse } = require('./mockresponse');
 
@@ -89,10 +90,11 @@ describe('urlfilter tests with mocked api calls', () => {
         expect(result).toEqual(['example.notexisting.']);
     });
 
-    it('does not crash on a malformed entry missing info; treats it as alive', async () => {
+    it('does not crash on a malformed entry missing info; treats it as alive and logs it', async () => {
         // A chunk where one domain comes back dead, one alive, and one with a
         // malformed record (no `info`). The malformed one must not throw or
-        // take the whole chunk down — it's left out of the dead list.
+        // take the whole chunk down — it's left out of the dead list, and a
+        // verbose log is emitted so a systemic issue is diagnosable.
         const responseData = {
             'dead.example': { info: { registered_domain_used_last_24_hours: false }, matches: [] },
             'alive.example': { info: { registered_domain_used_last_24_hours: true }, matches: [] },
@@ -105,13 +107,22 @@ describe('urlfilter tests with mocked api calls', () => {
             json: jest.fn().mockResolvedValue(responseData),
         });
 
-        const result = await urlfilter.findDeadDomains(
-            ['dead.example', 'alive.example', 'malformed.example'],
-        );
+        const verboseSpy = jest.spyOn(consola, 'verbose').mockImplementation(() => {});
 
-        // Only the definitively-dead domain is flagged; the malformed one is
-        // treated as alive, not crashed on.
-        expect(result).toEqual(['dead.example']);
+        try {
+            const result = await urlfilter.findDeadDomains(
+                ['dead.example', 'alive.example', 'malformed.example'],
+            );
+
+            // Only the definitively-dead domain is flagged; the malformed one is
+            // treated as alive, not crashed on.
+            expect(result).toEqual(['dead.example']);
+            // The ambiguous entry is logged (verbose) exactly once.
+            expect(verboseSpy).toHaveBeenCalledTimes(1);
+            expect(verboseSpy).toHaveBeenCalledWith(expect.stringContaining('malformed.example'));
+        } finally {
+            verboseSpy.mockRestore();
+        }
     });
 
     it('checks lots of domains using two chunks', async () => {
