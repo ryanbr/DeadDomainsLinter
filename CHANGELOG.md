@@ -7,6 +7,48 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 [Keep a Changelog]: https://keepachangelog.com/en/1.0.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 
+## [2.1.0] - 2026-05-31
+
+### Added
+
+- `--dns="8.8.8.8,1.1.1.1"`: override the built-in DNS resolver pool used by the
+  dead-domain DNS double-check.
+- `--dns-rotate`: on an ambiguous DNS result (timeout/SERVFAIL), fall back to the
+  next server(s) for the same domain until a definitive answer. Works with or
+  without `--dns` (rotates over the default pool when `--dns` is absent).
+
+### Changed
+
+- DNS double-check is now conservative: only a definitive NXDOMAIN counts a
+  domain as dead. Ambiguous results — timeout, SERVFAIL, refused, or "exists but
+  no A record" (e.g. IPv6-only) — are treated as alive. Previously any DNS error
+  flagged the domain dead, which could remove rules for live domains during a
+  flaky lookup.
+- HTTP/2 is enabled for the urlfilter API. The server sends `Connection: close`,
+  so over HTTP/1.1 every request opened a fresh connection; on large lists that
+  churn caused connect-timeout storms. HTTP/2 multiplexes all requests over one
+  connection, eliminating it.
+- Dependencies updated: `@adguard/agtree` 1.x → 2.x, `glob` 10 → 13, `diff`
+  5 → 9, `tldts` 6 → 7, `jest` 29 → 30. Node ≥18 unchanged.
+
+### Fixed
+
+- `$denyallow`: a dead domain in a `denyallow` list now drops just that modifier
+  (or the dead entries) instead of removing the entire — still active — blocking
+  rule.
+- DNS check no longer crashes on a `dns.lookup` error/empty result, and no longer
+  counts transient failures as dead (see Changed).
+- A malformed/`info`-less urlfilter API entry no longer throws and fails the
+  whole 25-domain batch; such entries are treated as alive and logged at verbose.
+- Network-level fetch failures are now retried (they previously aborted the batch
+  with no retry), and errors surface the real cause (e.g.
+  `UND_ERR_CONNECT_TIMEOUT`) instead of a bare `fetch failed`.
+- `Retry-After: 0` is honored as an immediate retry instead of being treated as a
+  parse error; no longer sleeps a full `Retry-After` on the final attempt before
+  giving up.
+
+[2.1.0]: https://github.com/AdguardTeam/DeadDomainsLinter/compare/v2.0.0...v2.1.0
+
 ## [2.0.0] - 2026-05-25
 
 Fork release with substantial divergence from upstream 1.0.33. Major bump
