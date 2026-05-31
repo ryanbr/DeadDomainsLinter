@@ -115,14 +115,20 @@ function trimFqdn(domain) {
  * Parses `Retry-After` header (seconds or HTTP date).
  *
  * @param {string} retryAfter - Header value.
- * @returns {number} Delay in milliseconds.
+ * @returns {number|null} Non-negative delay in milliseconds, or null if the
+ * header could not be parsed. Note that 0 is a valid delay (retry immediately)
+ * and is distinct from null.
  */
 function parseRetryAfter(retryAfter) {
     if (/^\d+$/.test(retryAfter)) {
         return parseInt(retryAfter, DECIMAL_BASE) * ONE_SECOND_MS; // Seconds to ms
     }
     const date = new Date(retryAfter);
-    return !Number.isNaN(date.getTime()) ? date - Date.now() : null;
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+    // A date in the past means "retry now"; clamp negatives to 0.
+    return Math.max(0, date - Date.now());
 }
 
 /**
@@ -161,15 +167,20 @@ async function fetchWithRetry(domains, maxAttempts = DEFAULT_MAX_ATTEMPTS) {
         }
 
         const delayMs = parseRetryAfter(retryAfter);
-        if (delayMs) {
-            consola.info(`Retry required (attempt ${attempt}): Waiting ${delayMs}ms`);
-            // eslint-disable-next-line no-await-in-loop
-            await new Promise((resolve) => {
-                setTimeout(resolve, delayMs);
-            });
-        } else {
+        if (delayMs === null) {
             throw new Error(`Unable to parse retry-after header -${retryAfter}`);
         }
+
+        // If this was the last attempt, don't sleep — we're about to give up.
+        if (attempt >= maxAttempts) {
+            break;
+        }
+
+        consola.info(`Retry required (attempt ${attempt}): Waiting ${delayMs}ms`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => {
+            setTimeout(resolve, delayMs);
+        });
     }
     throw Error(`Fetch domains failed: ${url}, tried ${maxAttempts} times`);
 }

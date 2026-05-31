@@ -37,6 +37,37 @@ describe('urlfilter tests with mocked api calls', () => {
         await testRetryAfter(new Date(Date.now() + 2000));
     });
 
+    it('treats Retry-After: 0 as a valid immediate retry, not a parse failure', async () => {
+        fetch.mockResolvedValueOnce(createRateLimitedResponse('0'));
+        fetch.mockResolvedValueOnce(createSuccessResponse(['example.notexisting']));
+
+        const promise = urlfilter.findDeadDomains(['example.notexisting']);
+        // The retry sleep is setTimeout(_, 0); flush it.
+        await jest.advanceTimersByTimeAsync(0);
+        const result = await promise;
+
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(result).toEqual(['example.notexisting']);
+    });
+
+    it('gives up after maxAttempts without sleeping on the final attempt', async () => {
+        // Every attempt is rate-limited with a 2s Retry-After.
+        fetch.mockResolvedValue(createRateLimitedResponse('2'));
+
+        const promise = urlfilter.findDeadDomains(['example.notexisting']);
+        const rejection = expect(promise).rejects.toThrow();
+
+        // Only ONE inter-attempt sleep (between attempt 1 and 2) should occur.
+        // After advancing past it, attempt 2 fires, gets 429, and rejects
+        // immediately — without a second 2s sleep. If the final attempt still
+        // slept, this rejection would not settle until 4s and the test would
+        // hang.
+        await jest.advanceTimersByTimeAsync(2000);
+        await rejection;
+
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
     it('check a domain that we know does exist', async () => {
         fetch.mockResolvedValueOnce(createSuccessResponse([], ['example.org']));
 
