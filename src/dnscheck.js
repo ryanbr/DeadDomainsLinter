@@ -37,8 +37,15 @@ async function domainExists(domain) {
     try {
         const addresses = await resolveAsync(domain, 'A');
         return addresses.length > 0;
-    } catch {
-        return false;
+    } catch (err) {
+        // Only a definitive NXDOMAIN (ENOTFOUND) proves the name does not
+        // exist. Every other failure is ambiguous: ETIMEOUT/ESERVFAIL/
+        // ECONNREFUSED mean the resolver flaked, and ENODATA means the name
+        // exists but has no A record (e.g. AAAA- or MX-only). This check is a
+        // rescue gate — a live DNS result spares a domain that urlfilter
+        // flagged dead — so ambiguous results must count as alive rather than
+        // let a transient glitch remove a rule for a live domain.
+        return err.code !== dns.NOTFOUND;
     }
 }
 

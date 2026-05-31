@@ -13,14 +13,16 @@ describe('dnscheck', () => {
         expect(result).toBe(false);
     });
 
-    it('check a domain that only has a www. record', async () => {
-        const noWwwExists = await dnscheck.domainExists('city.kawasaki.jp');
-        // Make sure that there's no A record for the domain.
-        // If it appears, we'll need to change the domain for this test.
-        expect(noWwwExists).toBe(false);
+    it('treats a domain that exists but has no apex A record as alive', async () => {
+        // city.kawasaki.jp has no A record on the apex (only www.* does), so a
+        // direct A query returns ENODATA — "exists, no record of this type",
+        // not NXDOMAIN. domainExists must treat that as alive: the name clearly
+        // exists, so the DNS rescue gate should not let it be removed.
+        // If the apex ever gains/loses records we'll need a different domain.
+        const apexExists = await dnscheck.domainExists('city.kawasaki.jp');
+        expect(apexExists).toBe(true);
 
         const result = await dnscheck.checkDomain('city.kawasaki.jp');
-
         expect(result).toBe(true);
     });
 });
