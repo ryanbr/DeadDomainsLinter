@@ -30,7 +30,17 @@ Mocked tests stub `global.fetch` directly (`fetch = jest.fn(); global.fetch = fe
 
 ## Runtime requirements
 
-Node ≥18, relied on for **built-in `fetch`** and bundled `undici`. The fork deliberately dropped `node-fetch@2` and `node:punycode` — both pulled in the deprecated `punycode` builtin and printed `DEP0040` on every run. HTTP now goes through global `fetch`; punycode conversion uses the userland `punycode` package (`require('punycode/')`, note the trailing slash). Don't reintroduce `node-fetch` or `node:`-prefixed punycode.
+Node **≥18** (`engines`), relied on for **built-in `fetch`** and bundled `undici`. The fork deliberately dropped `node-fetch@2` and `node:punycode` — both pulled in the deprecated `punycode` builtin and printed `DEP0040` on every run. HTTP now goes through global `fetch`; punycode conversion uses the userland `punycode` package (`require('punycode/')`, note the trailing slash). Don't reintroduce `node-fetch` or `node:`-prefixed punycode.
+
+### Dependency pins worth knowing
+
+The codebase is **CommonJS**. Four deps are deliberately held back:
+- **`undici` pinned to 6.x** — undici 8 caused `UND_ERR_CONNECT_TIMEOUT` storms on large runs (it changed connection-pool internals; the per-rule request model floods the origin and connects time out). undici 6 is the proven pre-regression version and keeps the Node floor at ≥18. The Agent still bounds the pool (`connections: 16`) + keep-alive and `fetchWithRetry` retries network errors with jittered backoff — version-agnostic insurance, see `fetchdomains.js`.
+- **`yargs` pinned to 17.x** — yargs 18 needs Node ≥20 and drops the auto-argv singleton (`require('yargs')`); 17 keeps both. Reverted alongside undici to restore the ≥18 floor and the exact pre-regression runtime stack.
+- **`@adguard/agtree` pinned to 2.x** — agtree 3+ is **ESM-only** (`require()` fails), which would force a full ESM rewrite. Stay on 2.x unless migrating the whole codebase to ESM. Note agtree 2.x API quirks the code already accommodates: rule nodes have no `loc` (use the child's index in `listAst.children` for line numbers — `filelinter.js` passes `index + 1`); a modifier's name is `modifier.name.value` (not `.modifier.value`); `DomainListParser.parse(raw, defaultParserOptions, 0, PIPE_MODIFIER_SEPARATOR)` — the separator is the **4th** arg and defaults to comma.
+- **`eslint` pinned to 8.x** — `eslint-config-airbnb-base@15` caps at eslint 8 and `eslint-plugin-import` at 9; eslint 9/10 also require a flat-config migration. Staying on 8 keeps the `.eslintrc.js` + airbnb stack.
+
+Everything else (glob 13, diff 9, tldts 7, jest 30, @babel/* 7.29) is on latest. Note `pnpm-workspace.yaml` carries a `minimumReleaseAgeExclude` for tldts because the environment's supply-chain policy rejects packages published <7 days ago.
 
 ## Architecture
 
