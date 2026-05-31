@@ -140,6 +140,25 @@ describe('Linter mocked tests', () => {
         },
     ));
 
+    // The common real-world shape: $denyallow accompanies a live $domain
+    // (uBO requires denyallow to be used together with domain). The dead
+    // denyallow entry is dropped while the live $domain scope is preserved.
+    it('drops a dead $denyallow but keeps a live $domain scope', testLintRule(
+        '||ads.example^$domain=google.com,denyallow=example.notexistingdomain',
+        {
+            suggestedRuleText: '||ads.example^$domain=google.com',
+            deadDomains: ['example.notexistingdomain'],
+        },
+    ));
+
+    // When the positive $domain scope is itself all dead, the rule is still
+    // removed regardless of $denyallow — the exclusion exception doesn't
+    // rescue a rule that applies nowhere.
+    it('removes the rule when $domain is all dead even alongside $denyallow', testLintRule(
+        '||ads.example^$domain=example.notexisting1,denyallow=example.notexisting2',
+        { remove: true, deadDomains: ['example.notexisting1', 'example.notexisting2'] },
+    ));
+
     // Cosmetic rules tests
     it('suggest removing an element hiding rule which was only for dead domains', testLintRule(
         'example.notexistingdomain##banner',
