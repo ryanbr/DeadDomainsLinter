@@ -89,6 +89,31 @@ describe('urlfilter tests with mocked api calls', () => {
         expect(result).toEqual(['example.notexisting.']);
     });
 
+    it('does not crash on a malformed entry missing info; treats it as alive', async () => {
+        // A chunk where one domain comes back dead, one alive, and one with a
+        // malformed record (no `info`). The malformed one must not throw or
+        // take the whole chunk down — it's left out of the dead list.
+        const responseData = {
+            'dead.example': { info: { registered_domain_used_last_24_hours: false }, matches: [] },
+            'alive.example': { info: { registered_domain_used_last_24_hours: true }, matches: [] },
+            'malformed.example': { error: 'could not check', matches: [] }, // no info
+        };
+        fetch.mockResolvedValueOnce({
+            status: 200,
+            ok: true,
+            headers: { get: () => 'application/json' },
+            json: jest.fn().mockResolvedValue(responseData),
+        });
+
+        const result = await urlfilter.findDeadDomains(
+            ['dead.example', 'alive.example', 'malformed.example'],
+        );
+
+        // Only the definitively-dead domain is flagged; the malformed one is
+        // treated as alive, not crashed on.
+        expect(result).toEqual(['dead.example']);
+    });
+
     it('checks lots of domains using two chunks', async () => {
         const domains = [];
         for (let i = 0; i < 10; i += 1) {

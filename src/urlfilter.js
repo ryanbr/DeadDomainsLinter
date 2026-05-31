@@ -38,12 +38,18 @@ async function findDeadDomains(domains, chunkSize = CHUNK_SIZE) {
             // eslint-disable-next-line no-restricted-syntax
             for (const domain of chunk) {
                 const domainData = data[punycode.toASCII(trimFqdn(domain))];
-                if (domainData && domainData.info.registered_domain_used_last_24_hours === false) {
+                // Only flag a domain dead when the response definitively says
+                // so. A missing entry or missing `info` (partial/malformed
+                // record, per-domain error) is ambiguous, so leave the domain
+                // alive rather than NPE on domainData.info and fail the whole
+                // chunk over a single bad record.
+                if (domainData && domainData.info
+                    && domainData.info.registered_domain_used_last_24_hours === false) {
                     result.push(domain);
                 }
             }
         } catch (ex) {
-            // Re-throw to add information about the URL.
+            // Re-throw with context about which operation failed.
             throw new Error(`Failed to fetch domains ${ex}`);
         }
     }
