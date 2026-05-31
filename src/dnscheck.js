@@ -24,10 +24,14 @@ function nextServer() {
 }
 
 /**
- * Checks if the domain has an A record, cycling through DNS servers.
+ * Checks whether a domain looks alive via an A-record query, cycling through
+ * DNS servers. "Alive" is interpreted conservatively: anything other than a
+ * definitive NXDOMAIN counts as alive (see the catch block), so a domain that
+ * resolves, has no A record but exists (ENODATA), or whose lookup merely
+ * flaked all return true. Only a confirmed "no such name" returns false.
  *
  * @param {string} domain - Domain name to check with a DNS query.
- * @returns {Promise<boolean>} Returns true if the domain has an A record.
+ * @returns {Promise<boolean>} True unless the name is a definitive NXDOMAIN.
  */
 async function domainExists(domain) {
     const resolver = new dns.Resolver();
