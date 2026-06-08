@@ -55,6 +55,12 @@ const { argv } = require('yargs')
         description: 'On an ambiguous DNS result (timeout/SERVFAIL), retry the domain against'
             + ' the next server(s) until a definitive answer instead of giving up.',
     })
+    .option('urlfilter', {
+        type: 'boolean',
+        description: 'Use the AdGuard urlfilter web service to detect dead domains (default).'
+            + ' Use --no-urlfilter to detect from DNS only (a domain is dead only if it does not'
+            + ' resolve); this removes the AdGuard dependency but finds fewer dead domains.',
+    })
     .option('commentout', {
         type: 'boolean',
         description: 'Comment out rules instead of removing them.',
@@ -99,6 +105,7 @@ const { argv } = require('yargs')
     })
     .default('input', '**/*.txt')
     .default('dnscheck', true)
+    .default('urlfilter', true)
     .default('commentout', false)
     .default('concurrent', 10)
     .default('auto', false)
@@ -174,14 +181,29 @@ async function main() {
         }
     }
 
-    // --dns / --dns-rotate only matter when the DNS check is enabled.
-    if (!argv.dnscheck && (dnsServers || argv.dnsRotate)) {
+    // --no-urlfilter makes DNS the sole detector, so the DNS check must stay on.
+    const noUrlfilter = argv.urlfilter === false;
+    if (noUrlfilter && !argv.dnscheck) {
+        consola.error('--no-urlfilter needs the DNS check as the detector; do not combine it with --no-dnscheck');
+        process.exit(1);
+    }
+    if (noUrlfilter && argv.import) {
+        consola.warn('--no-urlfilter has no effect with --import (the imported list is used directly)');
+    }
+
+    // DNS is actually used when it is the detector (--no-urlfilter) or the
+    // safety net (--dnscheck, the default).
+    const dnsUsed = noUrlfilter || argv.dnscheck;
+    if (!dnsUsed && (dnsServers || argv.dnsRotate)) {
         consola.warn('--dns/--dns-rotate have no effect because the DNS check is disabled (--no-dnscheck)');
     }
 
-    if (argv.dnscheck) {
-        const pool = dnsServers || ['(built-in pool)'];
-        consola.info(`DNS check using ${pool.join(', ')}${argv.dnsRotate ? ' with fallback rotation' : ''}`);
+    if (dnsUsed) {
+        const poolStr = (dnsServers || ['(built-in pool)']).join(', ')
+            + (argv.dnsRotate ? ' with fallback rotation' : '');
+        consola.info(noUrlfilter
+            ? `Detecting dead domains from DNS only (urlfilter disabled) using ${poolStr}`
+            : `DNS check using ${poolStr}`);
     }
 
     const globExpression = argv.input;
@@ -256,6 +278,7 @@ async function main() {
                 output: argv.output,
                 dnsServers,
                 dnsRotate: argv.dnsRotate,
+                noUrlfilter,
             };
 
             // eslint-disable-next-line no-await-in-loop

@@ -128,6 +128,29 @@ dead-domains-linter --dnscheck=false
 
 [filterpolicy]: https://adguard.com/kb/general/ad-filtering/filter-policy/
 
+### Detecting without the AdGuard service (DNS-only)
+
+By default the tool uses the AdGuard urlfilter web service (the DNS snapshot
+described above) to decide which domains are dead. If you want to run without
+that dependency, pass `--no-urlfilter` to detect dead domains **purely from
+DNS**:
+
+```shell
+dead-domains-linter --no-urlfilter
+```
+
+In this mode a domain is considered dead only if it does **not resolve at all**
+(an `NXDOMAIN` response for both the apex and its `www.` form). This removes the
+reliance on `urlfilter.adtidy.org`, but it is a weaker signal: it will **miss**
+domains that still resolve yet are abandoned, parked, or simply unused — exactly
+the cases the AdGuard snapshot is good at catching. Expect noticeably fewer
+detections, all in the conservative direction (a still-resolving domain is never
+removed).
+
+The DNS check is the detector in this mode, so `--no-urlfilter` cannot be
+combined with `--no-dnscheck`. You can still point it at specific resolvers with
+`--dns` and enable per-domain fallback with `--dns-rotate`.
+
 ### Full usage info
 
 ```shell

@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog], and this project adheres to [Semantic
 [Keep a Changelog]: https://keepachangelog.com/en/1.0.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 
+## [Unreleased]
+
+### Added
+
+- `--no-urlfilter`: detect dead domains from DNS only, skipping the AdGuard
+  urlfilter web service entirely. A domain is dead only if it does not resolve
+  (NXDOMAIN on apex + `www.`). Removes the dependency on `urlfilter.adtidy.org`
+  at the cost of weaker detection (misses parked/unused-but-resolving domains).
+  DNS is the detector in this mode, so it cannot be combined with
+  `--no-dnscheck`; `--dns` / `--dns-rotate` still apply.
+
 ## [2.1.0] - 2026-05-31
 
 ### Added

@@ -374,26 +374,18 @@ const resolvedCheckCache = new Map();
 const inFlightCheckCache = new Map();
 
 /**
- * Runs a single urlfilter (+ optional DNS) batch and returns the set of
- * domains confirmed dead.
+ * Runs dnscheck.checkDomain over the given domains in concurrency-limited
+ * batches and returns a Map of domain -> exists (true = resolves/alive).
  *
- * @param {Array<string>} toCheck - Domains to look up.
+ * @param {Array<string>} domains - Domains to resolve.
  * @param {LintOptions} options - Configuration for the linting process.
- * @returns {Promise<Set<string>>} Set of confirmed-dead domains.
+ * @returns {Promise<Map<string, boolean>>} domain -> liveness.
  */
-async function runDeadCheckBatch(toCheck, options) {
-    const checkResult = await urlfilter.findDeadDomains(toCheck);
-    const confirmedDead = new Set(checkResult);
-
-    if (!options.useDNS) {
-        return confirmedDead;
-    }
-
-    // DNS double-check the dead ones; any that DNS says still exist are
-    // removed from the dead set.
+async function dnsCheckAll(domains, options) {
+    const liveness = new Map();
     const dnsBatchSize = options.concurrent || 4;
-    for (let i = 0; i < checkResult.length; i += dnsBatchSize) {
-        const batch = checkResult.slice(i, i + dnsBatchSize);
+    for (let i = 0; i < domains.length; i += dnsBatchSize) {
+        const batch = domains.slice(i, i + dnsBatchSize);
         // eslint-disable-next-line no-await-in-loop
         const results = await Promise.all(
             batch.map((domain) => dnscheck.checkDomain(domain, {
@@ -402,12 +394,52 @@ async function runDeadCheckBatch(toCheck, options) {
             })
                 .then((exists) => ({ domain, exists }))),
         );
-        results.forEach(({ domain, exists }) => {
-            if (exists) {
-                confirmedDead.delete(domain);
+        results.forEach(({ domain, exists }) => liveness.set(domain, exists));
+    }
+    return liveness;
+}
+
+/**
+ * Runs a single dead-domains batch and returns the set of domains confirmed
+ * dead. Normally urlfilter proposes the dead domains and DNS rescues any that
+ * still resolve; with options.noUrlfilter, DNS is the sole detector (a domain
+ * is dead only if it does not resolve at all).
+ *
+ * @param {Array<string>} toCheck - Domains to look up.
+ * @param {LintOptions} options - Configuration for the linting process.
+ * @returns {Promise<Set<string>>} Set of confirmed-dead domains.
+ */
+async function runDeadCheckBatch(toCheck, options) {
+    // DNS-only mode: no urlfilter / adtidy.org call. A domain is dead only if
+    // it does not resolve (NXDOMAIN on apex + www). This detects far fewer
+    // dead domains than urlfilter — it misses parked/unused-but-resolving
+    // ones — but removes the dependency on the AdGuard service.
+    if (options.noUrlfilter) {
+        const liveness = await dnsCheckAll(toCheck, options);
+        const dead = new Set();
+        liveness.forEach((exists, domain) => {
+            if (!exists) {
+                dead.add(domain);
             }
         });
+        return dead;
     }
+
+    const checkResult = await urlfilter.findDeadDomains(toCheck);
+    const confirmedDead = new Set(checkResult);
+
+    if (!options.useDNS) {
+        return confirmedDead;
+    }
+
+    // DNS double-check the proposed-dead ones; any that still resolve are
+    // removed from the dead set.
+    const liveness = await dnsCheckAll(checkResult, options);
+    liveness.forEach((exists, domain) => {
+        if (exists) {
+            confirmedDead.delete(domain);
+        }
+    });
 
     return confirmedDead;
 }
@@ -516,6 +548,8 @@ async function findDeadDomains(domains, options) {
  * check (overrides the defaults).
  * @property {boolean} [dnsRotate] - If true, ambiguous DNS results fall back to
  * the next server(s) until a definitive answer.
+ * @property {boolean} [noUrlfilter] - If true, skip the urlfilter web service
+ * and detect dead domains purely from DNS (dead only if it does not resolve).
  */
 
 /**

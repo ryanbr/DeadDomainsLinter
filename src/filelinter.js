@@ -31,6 +31,8 @@ const DEFAULT_CONCURRENT = 10;
  * check (overrides the defaults).
  * @property {boolean} [dnsRotate] - If true, ambiguous DNS results fall back to
  * the next server(s) until a definitive answer.
+ * @property {boolean} [noUrlfilter] - If true, detect dead domains from DNS only
+ * and skip the urlfilter web service.
  */
 
 /**
@@ -123,6 +125,7 @@ async function processRuleAst(file, ast, lineNumber, options) {
             ignoreDomains: options.ignoreDomains,
             dnsServers: options.dnsServers,
             dnsRotate: options.dnsRotate,
+            noUrlfilter: options.noUrlfilter,
         });
 
         // If the result is empty, the line can be simply skipped.

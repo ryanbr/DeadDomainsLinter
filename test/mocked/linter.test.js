@@ -1,6 +1,7 @@
 const agtree = require('@adguard/agtree');
 const punycode = require('punycode/');
 const checker = require('../../src/linter');
+const dnscheck = require('../../src/dnscheck');
 
 describe('Linter mocked tests', () => {
     let fetch;
@@ -191,6 +192,44 @@ describe('Linter mocked tests', () => {
         null,
         new Set(['example.notexistingdomain']),
     ));
+
+    // --no-urlfilter: DNS is the sole detector, urlfilter is never called.
+    it('noUrlfilter: detects a non-resolving domain via DNS without calling urlfilter', async () => {
+        const checkSpy = jest.spyOn(dnscheck, 'checkDomain')
+            .mockImplementation(async (domain) => !domain.includes('dead')); // 'dead' -> not alive
+
+        try {
+            const ast = agtree.RuleParser.parse('||dead.example^');
+            const result = await checker.lintRule(ast, {
+                noUrlfilter: true,
+                ignoreDomains: new Set(),
+            });
+
+            expect(result.deadDomains).toEqual(['dead.example']);
+            // The urlfilter web service (global.fetch) must not be touched.
+            expect(fetch).not.toHaveBeenCalled();
+            expect(checkSpy).toHaveBeenCalledWith('dead.example', expect.any(Object));
+        } finally {
+            checkSpy.mockRestore();
+        }
+    });
+
+    it('noUrlfilter: keeps a domain that still resolves', async () => {
+        const checkSpy = jest.spyOn(dnscheck, 'checkDomain').mockResolvedValue(true); // all alive
+
+        try {
+            const ast = agtree.RuleParser.parse('||alive.example^');
+            const result = await checker.lintRule(ast, {
+                noUrlfilter: true,
+                ignoreDomains: new Set(),
+            });
+
+            expect(result).toBeNull(); // nothing dead -> no issue
+            expect(fetch).not.toHaveBeenCalled();
+        } finally {
+            checkSpy.mockRestore();
+        }
+    });
 
     it('suggest modifying a scriptlet rule', testLintRule(
         'example.org,example.notexistingdomain#%#//scriptlet("set-constant", "a", "1")',
